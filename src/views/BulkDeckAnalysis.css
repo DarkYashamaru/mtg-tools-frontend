@@ -1,0 +1,65 @@
+/* BulkDeckAnalysis.css */
+
+.container {
+  max-width: 1000px;
+  margin: 40px auto;
+  padding: 32px;
+  background: var(--surface-card);
+  border: 1px solid var(--surface-border);
+  border-radius: 12px;
+  box-shadow: var(--shadow-md);
+  font-family: var(--font-sans);
+  color: var(--text-main);
+}
+
+h1 {
+  margin-top: 0;
+  font-size: 2.25rem;
+  font-weight: 800;
+  letter-spacing: -0.025em;
+  color: var(--text-light);
+}
+
+.description {
+  color: var(--text-muted);
+  font-size: 1.05rem;
+  line-height: 1.6;
+  margin-bottom: 24px;
+}
+
+.fetch-button {
+  margin-top: 20px;
+  padding: 12px 24px;
+  border: none;
+  border-radius: 8px;
+  background: var(--accent-electric);
+  color: #090d16; /* Perfect contrast text against bright neon */
+  font-weight: 700;
+  font-size: 0.95rem;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.fetch-button:hover:not(:disabled) {
+  background: #0ea5e9;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px var(--accent-electric-dim);
+}
+
+.fetch-button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  background: var(--surface-border-light);
+  color: var(--text-dark);
+}
+
+.error {
+  margin-top: 16px;
+  padding: 12px 16px;
+  background-color: var(--error-bg);
+  border: 1px solid var(--error-border);
+  color: var(--error-text);
+  border-radius: 8px;
+  font-size: 0.95rem;
+  font-weight: 500;
+}
