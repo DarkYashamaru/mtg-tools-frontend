@@ -69,6 +69,27 @@
   letter-spacing: -0.01em;
 }
 
+.card-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.account-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.12);
+  border: 1px solid var(--surface-border-light);
+  color: var(--text-muted);
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
 .tool-card p {
   color: var(--text-muted);
   font-size: 0.95rem;
@@ -97,4 +118,15 @@
 
 .tool-card.alternative-theme .action-text {
   color: var(--text-muted);
+}
+
+@media (max-width: 640px) {
+  .landing-container {
+    margin: 32px auto;
+    padding: 16px;
+  }
+
+  .tools-grid {
+    grid-template-columns: 1fr;
+  }
 }

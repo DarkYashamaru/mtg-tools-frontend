@@ -11,6 +11,6 @@ echo "🧹 Clearing out the old frontend files..."
 sudo rm -rf /var/www/magic-frontend/*
 
 echo "🚀 Copying new build files to production..."
-sudo cp -r /home/yasha/servers/www/magic-frontend/dist/. /var/www/magic-frontend/
+sudo cp -r /home/yasha/servers/www/magic/magic-frontend/dist/. /var/www/magic-frontend/
 
 echo "✅ Deployment completed successfully!"

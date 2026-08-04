@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// No extra state setup is required right now since router-link handles the navigation!
+const bulkBuilderRequiresAccount = true
 </script>
 
 <template>
@@ -24,11 +24,14 @@
 
       <router-link to="/tools/bulk-deck-builder" class="tool-card alternative-theme">
         <div class="card-content">
-          <h2>Bulk Deck Builder (Experimental)</h2>
+          <div class="card-heading">
+            <h2>Bulk Deck Builder (Experimental)</h2>
+            <span v-if="bulkBuilderRequiresAccount" class="account-badge">Requires an account</span>
+          </div>
           <p>
             Paste your full mtg collection and get insights into what commander decks could be created from it.
           </p>
-          <span class="action-text">Launch Extractor &rarr;</span>
+          <span class="action-text">Open Workspace &rarr;</span>
         </div>
       </router-link>
 

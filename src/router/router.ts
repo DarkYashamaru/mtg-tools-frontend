@@ -1,15 +1,33 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import Landing from '@/views/Landing.vue'
+import { useAuthStore } from '@/stores/authStore'
 
-export default createRouter({
+const router = createRouter({
   history: createWebHistory(),
   routes: [
     { path: '/', name: 'landing', component: Landing },
     { path: '/tools/deck-details', component: () => import('@/views/DeckDetails.vue') },
-    { path: '/tools/bulk-deck-builder', component: () => import('@/views/BulkDeckAnalysis.vue') },
-    { path: '/tools/bulk-deck-builder/possible-commanders', component: () => import('@/views/PossibleCommanders.vue') },
-    { path: '/tools/bulk-deck-builder/select-commander-theme', component: () => import('@/views/SelectCommanderTheme.vue') },
-    { path: '/tools/bulk-deck-builder/selected-theme', component: () => import('@/views/SelectedTheme.vue') },
+    {
+      path: '/tools/bulk-deck-builder',
+      component: () => import('@/views/BulkDeckAnalysis.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
+      path: '/tools/bulk-deck-builder/possible-commanders',
+      component: () => import('@/views/PossibleCommanders.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
+      path: '/tools/bulk-deck-builder/select-commander-theme',
+      component: () => import('@/views/SelectCommanderTheme.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
+      path: '/tools/bulk-deck-builder/selected-theme',
+      component: () => import('@/views/SelectedTheme.vue'),
+      meta: { requiresAuth: true },
+    },
+    { path: '/login', name: 'login', component: () => import('@/views/LoginView.vue') },
     
     // Named search routes
     { 
@@ -40,3 +58,24 @@ export default createRouter({
     return { top: 0 }
   }
 })
+
+router.beforeEach((to) => {
+  const authStore = useAuthStore()
+
+  if (to.meta.requiresAuth && !authStore.isAuthenticated) {
+    return {
+      name: 'login',
+      query: { redirect: to.fullPath },
+    }
+  }
+
+  if (to.name === 'login' && authStore.isAuthenticated) {
+    const redirect = typeof to.query.redirect === 'string' ? to.query.redirect : '/tools/bulk-deck-builder'
+
+    return redirect.startsWith('/') ? redirect : '/tools/bulk-deck-builder'
+  }
+
+  return true
+})
+
+export default router
