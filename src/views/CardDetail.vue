@@ -4,14 +4,9 @@ import { useRoute, useRouter } from 'vue-router'
 
 function cleanCardNameForSearch(name: string): string {
   if (!name) return ''
-  
-  return name
-    // Extract the first face if it's a split/double-faced card
-    .split('//')[0]
-    .trim()
+  return name.split('//')[0].trim()
 }
 
-// Define interfaces matching your Flask backend JSON structure
 interface ColorIdentity {
   symbol: string
 }
@@ -59,7 +54,6 @@ interface CardData {
   themes: CardTheme[]
 }
 
-// Pricing response data contract
 interface PriceInfo {
   price: string
   currency: string
@@ -68,20 +62,16 @@ interface PriceInfo {
 const route = useRoute()
 const router = useRouter()
 
-// Main Layout States
 const loading = ref(true)
 const error = ref<string | null>(null)
 const card = ref<CardData | null>(null)
 
-// Lazy Price Scraping States
 const priceLoading = ref(true)
 const priceError = ref(false)
 const priceData = ref<PriceInfo | null>(null)
 
-// Grab the ID from the route params (/card/:id)
 const oracleId = computed(() => route.params.id as string)
 
-// Fetch card by oracle_id from backend
 async function loadCardDetails() {
   loading.value = true
   error.value = null
@@ -97,7 +87,6 @@ async function loadCardDetails() {
     const data = await response.json()
     card.value = data
     
-    // Lazy-load local prices immediately after successful card fetch
     fetchLocalPrice(data.name)
   }
   catch (err: any) {
@@ -109,7 +98,6 @@ async function loadCardDetails() {
   }
 }
 
-// Asynchronously query the web scraper route
 async function fetchLocalPrice(cardName: string) {
   priceLoading.value = true
   priceError.value = false
@@ -140,14 +128,12 @@ async function fetchLocalPrice(cardName: string) {
   }
 }
 
-// Computes the final target marketplace link
 const dracoStoreUrl = computed(() => {
   if (!card.value?.name) return '#'
   const cleanedName = cleanCardNameForSearch(card.value.name)
-  return `https://dracostore.co/catalogo?q=${encodeURIComponent(cleanedName)}`
+  return `https://dracostore.co/catalogo?q=${encodeURIComponent(cleanedName)}&sort=price_asc`
 })
 
-// Format raw text bracket symbols like {3}{G} or {E} into neat UI badges
 function parseSymbols(text: string) {
   if (!text) return ''
   return text.replace(/{([^}]+)}/g, '<span class="sym symbol-$1">$1</span>')
@@ -282,9 +268,14 @@ onMounted(() => {
           </header>
 
           <div v-if="card.keywords?.length" class="keywords-wrap">
-            <span v-for="kw in card.keywords" :key="kw.label" class="keyword-pill">
+            <router-link 
+              v-for="kw in card.keywords" 
+              :key="kw.label" 
+              :to="{ name: 'search-results', query: { oracle_text: kw.label } }"
+              class="keyword-pill"
+            >
               {{ kw.label }}
-            </span>
+            </router-link>
           </div>
 
           <div class="oracle-text-box">
@@ -301,24 +292,30 @@ onMounted(() => {
           <div v-if="card.tags?.direct?.length" class="tag-group">
             <h3>Direct Attributes</h3>
             <div class="tags-flex">
-              <span v-for="tag in card.tags.direct" 
-                    :key="tag.slug" 
-                    class="tag-pill direct"
-                    :title="tag.description || 'No detailed description'">
+              <router-link 
+                v-for="tag in card.tags.direct" 
+                :key="tag.slug" 
+                :to="{ name: 'search-results', query: { tags: tag.slug } }"
+                class="tag-pill direct"
+                :title="tag.description || 'No detailed description'"
+              >
                 {{ tag.slug }}
-              </span>
+              </router-link>
             </div>
           </div>
 
           <div v-if="card.tags?.inherited?.length" class="tag-group">
             <h3>Inherited Attributes</h3>
             <div class="tags-flex">
-              <span v-for="tag in card.tags.inherited" 
-                    :key="tag.slug" 
-                    class="tag-pill inherited"
-                    :title="tag.description || 'No detailed description'">
+              <router-link 
+                v-for="tag in card.tags.inherited" 
+                :key="tag.slug" 
+                :to="{ name: 'search-results', query: { tags: tag.slug } }"
+                class="tag-pill inherited"
+                :title="tag.description || 'No detailed description'"
+              >
                 {{ tag.slug }}
-              </span>
+              </router-link>
             </div>
           </div>
         </div>
@@ -326,10 +323,15 @@ onMounted(() => {
         <div v-if="card.themes?.length" class="metadata-section">
           <h2>Community Archetypes & Themes</h2>
           <div class="themes-grid">
-            <div v-for="theme in card.themes" :key="theme.theme_id" class="theme-card">
+            <router-link 
+              v-for="theme in card.themes" 
+              :key="theme.theme_id" 
+              :to="{ name: 'search-results', query: { tags: theme.name } }"
+              class="theme-card"
+            >
               <span class="theme-name">#{{ theme.name }}</span>
               <span class="theme-score" title="Relevance Score">{{ theme.score }}</span>
-            </div>
+            </router-link>
           </div>
         </div>
 

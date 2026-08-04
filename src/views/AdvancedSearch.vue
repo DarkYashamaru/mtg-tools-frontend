@@ -1,20 +1,8 @@
 <script setup lang="ts">
 import { ref } from 'vue'
+import { useRouter } from 'vue-router'
 
-interface SearchCard {
-  oracle_id: string
-  name: string
-  cmc: number
-  faces?: {
-    small_image?: string
-    medium_image?: string
-    large_image?: string
-  }[]
-}
-
-const loading = ref(false)
-const hasSearched = ref(false)
-const results = ref<SearchCard[]>([])
+const router = useRouter()
 
 const name = ref('')
 const cardType = ref('')
@@ -25,7 +13,6 @@ const excludeTags = ref('')
 const exactColors = ref(false)
 const selectedColors = ref<string[]>([])
 
-// Refactored values to match the clean aesthetic on dynamic selection
 const colorOptions = [
   { symbol: 'W', label: 'White', hex: '#fef3c7', text: '#78350f' },
   { symbol: 'U', label: 'Blue', hex: '#1d4ed8', text: '#ffffff' },
@@ -52,56 +39,22 @@ function clearFilters() {
   excludeTags.value = ''
   exactColors.value = false
   selectedColors.value = []
-  results.value = []
-  hasSearched.value = false
 }
 
-function appendCommaSeparatedValues(
-  params: URLSearchParams,
-  key: string,
-  value: string,
-) {
-  if (!value.trim()) return
-  value
-    .split(',')
-    .map(item => item.trim())
-    .filter(Boolean)
-    .forEach(item => params.append(key, item))
-}
+function runSearch() {
+  const queryPayload: Record<string, any> = {}
 
-async function runSearch() {
-  loading.value = true
-  hasSearched.value = true
+  if (name.value.trim()) queryPayload.name = name.value.trim()
+  if (cardType.value.trim()) queryPayload.card_type = cardType.value.trim()
+  if (oracleText.value.trim()) queryPayload.oracle_text = oracleText.value.trim()
+  if (excludeOracleText.value.trim()) queryPayload.exclude_oracle_text = excludeOracleText.value.trim()
+  if (tags.value.trim()) queryPayload.tags = tags.value.trim()
+  if (excludeTags.value.trim()) queryPayload.exclude_tags = excludeTags.value.trim()
+  if (exactColors.value) queryPayload.exact_colors = 'true'
+  if (selectedColors.value.length) queryPayload.colors = selectedColors.value
 
-  try {
-    const params = new URLSearchParams()
-
-    if (name.value.trim()) params.append('name', name.value.trim())
-    if (cardType.value.trim()) params.append('card_type', cardType.value.trim())
-
-    appendCommaSeparatedValues(params, 'oracle_text', oracleText.value)
-    appendCommaSeparatedValues(params, 'exclude_oracle_text', excludeOracleText.value)
-    appendCommaSeparatedValues(params, 'tags', tags.value)
-    appendCommaSeparatedValues(params, 'exclude_tags', excludeTags.value)
-
-    if (exactColors.value) params.append('exact_colors', 'true')
-    selectedColors.value.forEach(color => params.append('colors', color))
-
-    const url = `/api/advanced?${params.toString()}`
-    const response = await fetch(url)
-
-    if (!response.ok) throw new Error(`HTTP ${response.status}`)
-
-    const text = await response.text()
-    results.value = JSON.parse(text)
-  }
-  catch (error) {
-    console.error('FETCH ERROR:', error)
-    results.value = []
-  }
-  finally {
-    loading.value = false
-  }
+  // Hand off execution cleanly to the specialized query route
+  router.push({ name: 'search-results', query: queryPayload })
 }
 </script>
 
@@ -176,56 +129,12 @@ async function runSearch() {
       </div>
 
       <div class="actions-row">
-        <button type="submit" class="btn btn-primary" :disabled="loading">
-          {{ loading ? 'Searching...' : 'Search Cards' }}
-        </button>
+        <button type="submit" class="btn btn-primary">Search Cards</button>
         <button type="button" class="btn btn-secondary" @click="clearFilters">
           Reset Filters
         </button>
       </div>
     </form>
-
-    <div v-if="hasSearched && !loading" class="results-meta">
-      <strong>{{ results.length }}</strong> cards match your criteria
-    </div>
-
-    <div v-if="loading" class="card-grid placeholders">
-      <div v-for="n in 8" :key="n" class="card skeleton">
-        <div class="skeleton-img"></div>
-        <div class="skeleton-info">
-          <div class="line title"></div>
-          <div class="line text"></div>
-        </div>
-      </div>
-    </div>
-
-    <div v-else-if="hasSearched && results.length === 0" class="empty-state">
-      <p>No cards found matching those criteria. Try expanding your parameters.</p>
-    </div>
-
-    <div v-else class="card-grid">
-      <a
-        v-for="card in results"
-        :key="card.oracle_id"
-        :href="`/card/${card.oracle_id}`"
-        class="card"
-      >
-        <div class="card-img-wrapper">
-          <img
-            v-if="card.faces?.[0]?.large_image"
-            :src="card.faces[0].large_image"
-            :alt="card.name"
-            loading="lazy"
-          >
-          <div v-else class="img-missing">No Image Available</div>
-        </div>
-
-        <div class="card-info">
-          <h3>{{ card.name }}</h3>
-          <span class="cmc-badge">CMC {{ card.cmc }}</span>
-        </div>
-      </a>
-    </div>
   </div>
 </template>
 

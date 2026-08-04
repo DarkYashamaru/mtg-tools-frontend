@@ -10,23 +10,33 @@ export default createRouter({
     { path: '/tools/bulk-deck-builder/possible-commanders', component: () => import('@/views/PossibleCommanders.vue') },
     { path: '/tools/bulk-deck-builder/select-commander-theme', component: () => import('@/views/SelectCommanderTheme.vue') },
     { path: '/tools/bulk-deck-builder/selected-theme', component: () => import('@/views/SelectedTheme.vue') },
-    { path: '/tools/advanced-search', component: () => import('@/views/AdvancedSearch.vue') },
-    { path: '/card/:id', component: () => import('@/views/CardDetail.vue') },
+    
+    // Named search routes
+    { 
+      path: '/search', 
+      name: 'search-results', 
+      component: () => import('@/views/SearchResults.vue') 
+    },
+    { 
+      path: '/tools/advanced-search', 
+      name: 'advanced-search', 
+      component: () => import('@/views/AdvancedSearch.vue') 
+    },
+    
+    { path: '/card/:id', name: 'card-detail', component: () => import('@/views/CardDetail.vue') },
     { path: '/:pathMatch(.*)*', name: 'NotFound', component: () => import('@/views/NotFound.vue')},
   ],
 
   scrollBehavior(to, from, savedPosition) {
-    // Browser back / forward
     if (savedPosition) {
       return savedPosition
     }
 
-    // SAME route, only query changed (lightbox open/close)
+    // Keeps the scroll position steady when changing query text or parameters
     if (to.path === from.path) {
       return false
     }
 
-    // Different page → reset scroll
     return { top: 0 }
   }
 })

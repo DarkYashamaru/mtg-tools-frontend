@@ -43,6 +43,15 @@ const thematicCardsInPool = computed(() => {
 function goBack() {
   router.push('/tools/bulk-deck-builder/select-commander-theme')
 }
+
+// Resolves the targeted internal system route parameters and opens it inside a fresh browsing context tab
+function openCardDetail(oracleId: string) {
+  const routeData = router.resolve({
+    name: 'card-detail',
+    params: { id: oracleId }
+  })
+  window.open(routeData.href, '_blank')
+}
 </script>
 
 <template>
@@ -87,8 +96,8 @@ function goBack() {
             <tbody>
               <tr 
                 v-for="item in thematicCardsInPool" 
-                :key="item.card.oracle_id" 
-                :class="{ 'zero-synergy': item.themeScore === 0 }"
+                :key="item.card.oracle_id"
+                @click="openCardDetail(item.card.oracle_id)"
               >
                 <td class="card-name-cell">
                   <div class="card-identity-block">

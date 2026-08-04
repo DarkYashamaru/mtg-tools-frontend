@@ -1,8 +1,16 @@
 /* src/views/CardDetail.css */
 
+/* Component-level sizing reset to protect flex and grid dimensions */
+.page-wrapper,
+.page-wrapper * {
+  box-sizing: border-box;
+}
+
 .page-wrapper {
-  width: min(1300px, calc(100vw - 32px));
+  width: 100%;
+  max-width: 1300px;
   margin: 0 auto 64px auto;
+  padding: 0 24px; /* Safely replaces the calc viewport deduction */
   font-family: var(--font-sans);
   color: var(--text-main);
 }
@@ -128,6 +136,7 @@
   justify-content: space-between;
   align-items: center;
   padding: 4px 2px;
+  width: 100%;
 }
 
 .store-identity {
@@ -445,22 +454,7 @@
 .skeleton-view .skeleton-line.subline { width: 30%; }
 .skeleton-view .skeleton-box.text-block { height: 200px; background: var(--surface-card); border-radius: 12px; }
 
-@media (max-width: 960px) {
-  .details-grid {
-    grid-template-columns: 1fr;
-    gap: 32px;
-  }
-  .image-sticky-wrapper {
-    position: relative;
-    top: 0;
-    max-width: 420px;
-    margin: 0 auto;
-    width: 100%;
-  }
-}
-
-/* Append to CardDetail.css */
-
+/* Interactive Marketplace Link Elements */
 .price-redirect-link {
   display: flex;
   flex-direction: column;
@@ -494,4 +488,25 @@
 .price-redirect-link:hover .redirect-hint {
   transform: translateX(2px);
   opacity: 1;
+}
+
+/* Responsive Structural Overrides */
+@media (max-width: 960px) {
+  .page-wrapper {
+    padding: 0 16px;
+    margin: 20px auto 40px auto;
+  }
+
+  .details-grid {
+    grid-template-columns: 1fr;
+    gap: 32px;
+  }
+
+  .image-sticky-wrapper {
+    position: relative;
+    top: 0;
+    max-width: 420px;
+    margin: 0 auto;
+    width: 100%;
+  }
 }
