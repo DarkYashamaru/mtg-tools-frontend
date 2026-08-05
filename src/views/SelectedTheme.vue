@@ -1,71 +1,164 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, onMounted, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
+import CommanderHero from '@/components/CommanderHero.vue'
+import { useAuthStore } from '@/stores/authStore'
 import { useCollectionStore } from '../stores/collectionStore'
-import CommanderHero from '@/components/CommanderHero.vue' 
+import type { Card, CardThemeResponse } from '@/utils/deckScorer'
+import { loadSavedCollectionGameplay } from '@/composables/useSavedCollectionGameplay'
 
 const router = useRouter()
+const route = useRoute()
 const store = useCollectionStore()
+const authStore = useAuthStore()
+const { authHeaders } = storeToRefs(authStore)
 
-const { selectedTheme, selectedCommanderData } = storeToRefs(store)
+const activeCommander = ref<Card | null>(null)
+const activeTheme = ref<CardThemeResponse | null>(null)
+const collectionCards = ref<Card[]>([])
+const isLoading = ref(true)
+const errorMessage = ref('')
 
-const activeDetails = computed(() => selectedCommanderData.value)
-const activeTheme = computed(() => selectedTheme.value)
+const activeCollectionId = computed(() => {
+  const rawValue = route.params.collectionId
+  return typeof rawValue === 'string' && rawValue.length > 0 ? rawValue : null
+})
+
+const activeCommanderId = computed(() => {
+  const rawValue = route.params.commanderId
+  return typeof rawValue === 'string' && rawValue.length > 0 ? rawValue : null
+})
+
+const activeThemeId = computed(() => {
+  const rawValue = route.params.themeId
+  if (typeof rawValue !== 'string' || rawValue.length === 0) {
+    return null
+  }
+
+  const parsed = Number(rawValue)
+  return Number.isFinite(parsed) ? parsed : null
+})
 
 const thematicCardsInPool = computed(() => {
-  const activeCommander = activeDetails.value?.commander
-  const targetTheme = activeTheme.value
-  
-  if (!activeCommander || !targetTheme) return []
-  
-  const commanderColors = new Set(activeCommander.color_identity.map(c => c.symbol.toUpperCase()))
-  const commanderId = activeCommander.oracle_id
-  const targetThemeId = targetTheme.theme_id
+  if (!activeCommander.value || !activeTheme.value) return []
 
-  return store.collection
-    .filter(card => {
+  const commanderColors = new Set(activeCommander.value.color_identity.map((c) => c.symbol.toUpperCase()))
+  const commanderId = activeCommander.value.oracle_id
+  const targetThemeId = activeTheme.value.theme_id
+
+  return collectionCards.value
+    .filter((card) => {
       if (card.oracle_id === commanderId) return false
-      return card.color_identity.every(color => commanderColors.has(color.symbol.toUpperCase()))
+      return card.color_identity.every((color) => commanderColors.has(color.symbol.toUpperCase()))
     })
-    .map(card => {
-      const matchingThemeInstance = card.themes?.find(t => t.theme_id === targetThemeId)
+    .map((card) => {
+      const matchingThemeInstance = card.themes?.find((t) => t.theme_id === targetThemeId)
       const themeScore = matchingThemeInstance ? matchingThemeInstance.score : 0
 
       return {
         card,
-        themeScore
+        themeScore,
       }
     })
     .sort((a, b) => b.themeScore - a.themeScore)
 })
 
+async function loadSelectedThemePage() {
+  if (!activeCollectionId.value || !activeCommanderId.value || activeThemeId.value === null) {
+    errorMessage.value = 'Missing collection, commander, or theme identifier.'
+    isLoading.value = false
+    return
+  }
+
+  isLoading.value = true
+  errorMessage.value = ''
+
+  try {
+    const { cards } = await loadSavedCollectionGameplay({
+      collectionId: activeCollectionId.value,
+      authHeaders,
+      routePath: route.fullPath,
+      router,
+    })
+
+    collectionCards.value = cards
+    store.setCollection(cards)
+    store.selectCommander(activeCommanderId.value)
+
+    activeCommander.value = cards.find((card) => card.oracle_id === activeCommanderId.value) ?? null
+    if (!activeCommander.value) {
+      throw new Error('The selected commander is not present in this collection.')
+    }
+
+    const response = await fetch(`/api/themes/by-commander/${activeCommanderId.value}`)
+    if (!response.ok) {
+      throw new Error('Failed to pull commander theme profiles.')
+    }
+
+    const themes = await response.json()
+    activeTheme.value = Array.isArray(themes)
+      ? themes.find((theme) => Number(theme.theme_id) === activeThemeId.value) ?? null
+      : null
+
+    if (!activeTheme.value) {
+      throw new Error('The selected theme was not found for this commander.')
+    }
+
+    store.setSelectedTheme(activeTheme.value)
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : 'Unable to load selected theme.'
+  } finally {
+    isLoading.value = false
+  }
+}
+
 function goBack() {
+  if (activeCollectionId.value && activeCommanderId.value) {
+    router.push({
+      name: 'collection-select-commander-theme',
+      params: {
+        collectionId: activeCollectionId.value,
+        commanderId: activeCommanderId.value,
+      },
+    })
+    return
+  }
+
   router.push('/tools/bulk-deck-builder/select-commander-theme')
 }
 
-// Resolves the targeted internal system route parameters and opens it inside a fresh browsing context tab
 function openCardDetail(oracleId: string) {
   const routeData = router.resolve({
     name: 'card-detail',
-    params: { id: oracleId }
+    params: { id: oracleId },
   })
   window.open(routeData.href, '_blank')
 }
+
+onMounted(() => {
+  loadSelectedThemePage()
+})
 </script>
 
 <template>
   <div class="container">
     <button class="back-link" @click="goBack">← Back to Theme Selection</button>
 
-    <div v-if="!activeDetails || !activeDetails.commander || !activeTheme" class="empty-state">
+    <div v-if="isLoading" class="empty-state">
+      <h3>Loading Strategy Workspace</h3>
+      <p>Resolving the commander, collection pool, and selected theme.</p>
+      <button class="action-btn" @click="goBack">Go to Theme Selection</button>
+    </div>
+
+    <div v-else-if="!activeCommander || !activeTheme || errorMessage" class="empty-state">
       <h3>No Strategy Workspace Active</h3>
-      <p>Please return to the selection panel to select both a commander and an operational synergy theme profile.</p>
+      <p>{{ errorMessage || 'Please return to the selection panel to select both a commander and an operational synergy theme profile.' }}</p>
       <button class="action-btn" @click="goBack">Go to Theme Selection</button>
     </div>
 
     <div v-else>
-      <CommanderHero :commander="activeDetails.commander" show-tags>
+      <CommanderHero :commander="activeCommander" show-tags>
         <template #banner>
           <div class="theme-banner">
             Active Strategy: <strong>{{ activeTheme.name }}</strong>

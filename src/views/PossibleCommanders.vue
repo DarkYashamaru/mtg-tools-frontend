@@ -1,22 +1,78 @@
 <script setup lang="ts">
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { useRoute } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { useCollectionStore } from '../stores/collectionStore'
+import { useAuthStore } from '@/stores/authStore'
+import { loadSavedCollectionGameplay } from '@/composables/useSavedCollectionGameplay'
 
 const router = useRouter()
+const route = useRoute()
 const store = useCollectionStore()
+const authStore = useAuthStore()
 
 // Bind seamlessly to the reactive store evaluation layer
 const { collection, validCommanders, scoredCommanders } = storeToRefs(store)
+const { authHeaders } = storeToRefs(authStore)
+const isLoading = ref(false)
+const errorMessage = ref('')
+
+const activeCollectionId = computed(() => {
+  const rawValue = route.params.collectionId
+  return typeof rawValue === 'string' && rawValue.length > 0 ? rawValue : null
+})
+
+async function loadCollectionFromBackend(collectionId: string) {
+  isLoading.value = true
+  errorMessage.value = ''
+  store.clearStore()
+
+  try {
+    const { cards } = await loadSavedCollectionGameplay({
+      collectionId,
+      authHeaders,
+      routePath: route.fullPath,
+      router,
+    })
+    store.setCollection(cards)
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : 'Unable to load collection data.'
+  } finally {
+    isLoading.value = false
+  }
+}
 
 function handleCommanderClick(oracleId: string) {
   store.selectCommander(oracleId)
+  if (activeCollectionId.value) {
+    router.push({
+      name: 'collection-select-commander-theme',
+      params: {
+        collectionId: activeCollectionId.value,
+        commanderId: oracleId,
+      },
+    })
+    return
+  }
+
   router.push('/tools/bulk-deck-builder/select-commander-theme')
 }
 
 function goBackToImporter() {
+  if (activeCollectionId.value) {
+    router.push(`/tools/bulk-deck-builder/collections/${activeCollectionId.value}`)
+    return
+  }
+
   router.push('/tools/bulk-deck-builder')
 }
+
+onMounted(() => {
+  if (activeCollectionId.value) {
+    loadCollectionFromBackend(activeCollectionId.value)
+  }
+})
 </script>
 
 <template>
@@ -30,9 +86,14 @@ function goBackToImporter() {
     </div>
 
     <div v-if="!collection || collection.length === 0" class="empty-state">
+      <h3 v-if="isLoading">Loading Collection</h3>
+      <p v-if="isLoading">Resolving gameplay cards for this saved collection...</p>
+
+      <template v-else>
       <h3>No Active Workspace Data Found</h3>
-      <p>Please import or paste your card collection data first to run evaluation scores.</p>
+      <p>{{ errorMessage || 'Please import or paste your card collection data first to run evaluation scores.' }}</p>
       <button class="redirect-btn" @click="goBackToImporter">Go to Importer</button>
+      </template>
     </div>
 
     <div v-else class="results-layout">
