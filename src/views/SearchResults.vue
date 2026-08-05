@@ -2,20 +2,13 @@
 import { ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import type { LocationQueryValue } from 'vue-router'
-
-interface SearchCard {
-  oracle_id: string
-  name: string
-  cmc: number
-  faces?: {
-    large_image?: string
-  }[]
-}
+import CardFaceViewer from '@/components/cards/CardFaceViewer.vue'
+import type { GameplayCard } from '@/types/gameplayCard'
 
 const route = useRoute()
 const loading = ref(false)
 const error = ref<string | null>(null)
-const results = ref<SearchCard[]>([])
+const results = ref<GameplayCard[]>([])
 
 function appendValue(
   params: URLSearchParams,
@@ -129,18 +122,33 @@ watch(
         class="card"
       >
         <div class="card-img-wrapper">
-          <img
-            v-if="card.faces?.[0]?.large_image"
-            :src="card.faces[0].large_image"
-            :alt="card.name"
-            loading="lazy"
-          >
-          <div v-else class="img-missing">No Image Available</div>
+          <CardFaceViewer
+            :card="card"
+            image-size="large"
+            :show-flip-control="true"
+            :interactive="true"
+          />
         </div>
 
         <div class="card-info">
           <h3>{{ card.name }}</h3>
           <span class="cmc-badge">CMC {{ card.cmc }}</span>
+          <div v-if="card.categories.length || card.archetypes.length" class="metadata-pills">
+            <span
+              v-for="category in card.categories"
+              :key="`category-${card.oracle_id}-${category.name}`"
+              class="metadata-pill category"
+            >
+              {{ category.name }}
+            </span>
+            <span
+              v-for="archetype in card.archetypes"
+              :key="`archetype-${card.oracle_id}-${archetype.name}`"
+              class="metadata-pill archetype"
+            >
+              {{ archetype.name }}
+            </span>
+          </div>
         </div>
       </router-link>
     </div>
@@ -148,3 +156,32 @@ watch(
 </template>
 
 <style scoped src="./SearchResults.css"></style>
+<style scoped>
+.metadata-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.metadata-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--surface-border-light);
+  color: var(--text-main);
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.metadata-pill.category {
+  background: rgba(56, 189, 248, 0.12);
+  border-color: var(--accent-electric-border);
+}
+
+.metadata-pill.archetype {
+  background: rgba(148, 163, 184, 0.12);
+}
+</style>

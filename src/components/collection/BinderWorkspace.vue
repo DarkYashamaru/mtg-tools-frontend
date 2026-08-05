@@ -19,5 +19,5 @@ const sortedItems = computed(() => [...props.collection.items].sort((a, b) => {
 
 <template>
   <BinderListView v-if="viewMode === 'list'" :items="sortedItems" />
-  <DeckSection v-else title="Binder Grid" :items="sortedItems" :view-mode="viewMode" />
+  <DeckSection v-else title="Binder Grid" :items="sortedItems" :view-mode="viewMode" :group-by-category="true" />
 </template>

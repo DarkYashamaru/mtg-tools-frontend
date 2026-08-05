@@ -1,57 +1,12 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import CardFaceViewer from '@/components/cards/CardFaceViewer.vue'
+import type { GameplayCard } from '@/types/gameplayCard'
 
 function cleanCardNameForSearch(name: string): string {
   if (!name) return ''
   return name.split('//')[0].trim()
-}
-
-interface ColorIdentity {
-  symbol: string
-}
-
-interface CardFace {
-  card_types: string[]
-  large_image: string
-  normal_image: string
-  small_image: string
-  mana_cost: string
-  name: string
-  oracle_text: string
-  subtypes: string[]
-  supertypes: string[]
-}
-
-interface TagItem {
-  slug: string
-  description: string | null
-}
-
-interface CardTags {
-  direct: TagItem[]
-  inherited: TagItem[]
-}
-
-interface CardTheme {
-  theme_id: number
-  name: string
-  score: number
-  curated: boolean
-}
-
-interface CardData {
-  oracle_id: string
-  name: string
-  cmc: number
-  layout: string
-  standard_legal: boolean
-  commander_legal: boolean
-  color_identity: ColorIdentity[]
-  faces: CardFace[]
-  keywords: { label: string }[]
-  tags: CardTags
-  themes: CardTheme[]
 }
 
 interface PriceInfo {
@@ -64,7 +19,7 @@ const router = useRouter()
 
 const loading = ref(true)
 const error = ref<string | null>(null)
-const card = ref<CardData | null>(null)
+const card = ref<GameplayCard | null>(null)
 
 const priceLoading = ref(true)
 const priceError = ref(false)
@@ -85,7 +40,7 @@ async function loadCardDetails() {
     }
     
     const data = await response.json()
-    card.value = data
+    card.value = data as GameplayCard
     
     fetchLocalPrice(data.name)
   }
@@ -134,12 +89,14 @@ const dracoStoreUrl = computed(() => {
   return `https://dracostore.co/catalogo?q=${encodeURIComponent(cleanedName)}&sort=price_asc`
 })
 
-function parseSymbols(text: string) {
+function parseSymbols(text: string | null | undefined) {
   if (!text) return ''
   return text.replace(/{([^}]+)}/g, '<span class="sym symbol-$1">$1</span>')
 }
 
-const mainImage = computed(() => card.value?.faces?.[0]?.large_image || '')
+const hasClassificationMetadata = computed(() =>
+  !!card.value && (card.value.categories.length > 0 || card.value.archetypes.length > 0)
+)
 
 function goBack() {
   if (window.history.length > 1) {
@@ -192,7 +149,13 @@ onMounted(() => {
       <section class="visual-pane">
         <div class="image-sticky-wrapper">
           <div class="card-frame">
-            <img :src="mainImage" :alt="card.name" class="card-large-img" />
+            <CardFaceViewer
+              :card="card"
+              image-size="large"
+              :show-flip-control="true"
+              :interactive="true"
+              :lazy="false"
+            />
           </div>
 
           <div class="price-widget-card" :class="{ 'has-error': priceError }">
@@ -279,7 +242,7 @@ onMounted(() => {
           </div>
 
           <div class="oracle-text-box">
-            <p v-for="(paragraph, pIdx) in face.oracle_text.split('\n')" 
+            <p v-for="(paragraph, pIdx) in (face.oracle_text || '').split('\n')" 
                :key="pIdx" 
                v-html="parseSymbols(paragraph)">
             </p>
@@ -316,6 +279,36 @@ onMounted(() => {
               >
                 {{ tag.slug }}
               </router-link>
+            </div>
+          </div>
+        </div>
+
+        <div v-if="hasClassificationMetadata" class="metadata-section">
+          <h2>Classification Data</h2>
+
+          <div v-if="card.categories.length" class="tag-group">
+            <h3>Categories</h3>
+            <div class="tags-flex">
+              <span
+                v-for="category in card.categories"
+                :key="category.name"
+                class="tag-pill category"
+              >
+                {{ category.name }}
+              </span>
+            </div>
+          </div>
+
+          <div v-if="card.archetypes.length" class="tag-group">
+            <h3>Archetypes</h3>
+            <div class="tags-flex">
+              <span
+                v-for="archetype in card.archetypes"
+                :key="archetype.name"
+                class="tag-pill archetype"
+              >
+                {{ archetype.name }}
+              </span>
             </div>
           </div>
         </div>

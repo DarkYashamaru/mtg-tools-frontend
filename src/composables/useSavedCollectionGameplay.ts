@@ -6,6 +6,20 @@ import { useAuthStore } from '@/stores/authStore'
 
 type AuthHeadersRef = ComputedRef<Record<string, string>>
 
+function dedupeGameplayCards(cards: Card[]): Card[] {
+  const uniqueCards = new Map<string, Card>()
+
+  for (const card of cards) {
+    if (!card?.oracle_id || uniqueCards.has(card.oracle_id)) {
+      continue
+    }
+
+    uniqueCards.set(card.oracle_id, card)
+  }
+
+  return Array.from(uniqueCards.values())
+}
+
 type LoadSavedCollectionGameplayOptions = {
   collectionId: string
   authHeaders: AuthHeadersRef
@@ -74,6 +88,6 @@ export async function loadSavedCollectionGameplay({
 
   return {
     collection: selectedCollection,
-    cards: cardsPayload.cards as Card[],
+    cards: dedupeGameplayCards(cardsPayload.cards as Card[]),
   }
 }

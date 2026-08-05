@@ -1,30 +1,23 @@
 <script setup lang="ts">
-import { ref } from 'vue'
 import type { CollectionItem } from './types'
+import CardFaceViewer from '@/components/cards/CardFaceViewer.vue'
 
 interface Props {
   item: CollectionItem
 }
 
 defineProps<Props>()
-
-const imageFailed = ref(false)
 </script>
 
 <template>
   <article class="card-tile">
     <div class="card-media">
-      <img
-        v-if="item.image_uri && !imageFailed"
-        :src="item.image_uri"
-        :alt="item.name || 'Card image'"
-        class="card-image"
-        loading="lazy"
-        @error="imageFailed = true"
-      >
-      <div v-else class="card-fallback">
-        <span>{{ item.name || 'Unknown Card' }}</span>
-      </div>
+      <CardFaceViewer
+        :preview-image-url="item.image_uri"
+        :fallback-name="item.name"
+        image-size="normal"
+        :compact-fallback="true"
+      />
 
       <span class="quantity-chip">{{ item.amount }}x</span>
     </div>
@@ -51,24 +44,11 @@ const imageFailed = ref(false)
   box-shadow: var(--shadow-md);
 }
 
-.card-image,
-.card-fallback {
+.card-media :deep(img),
+.card-media :deep(.face-fallback) {
   display: block;
   width: 100%;
   aspect-ratio: 0.71 / 1;
-}
-
-.card-image {
-  object-fit: cover;
-}
-
-.card-fallback {
-  display: grid;
-  place-items: center;
-  padding: 18px;
-  color: var(--text-main);
-  text-align: center;
-  line-height: 1.5;
 }
 
 .quantity-chip {

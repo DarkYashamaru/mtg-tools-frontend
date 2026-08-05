@@ -133,8 +133,9 @@ function goBack() {
         </div>
 
         <div class="format-note">
-          <strong>Expected format:</strong> one print per line, such as <code>1 Sol Ring (CMM) 123</code>.
-          Optional section headers like <code>Commander</code>, <code>Mainboard</code>, <code>Sideboard</code>, and <code>Maybeboard</code> are supported.
+          <strong>Supported formats:</strong> one print per line, such as <code>1 Sol Ring (CMM) 123</code>, or scan-export rows such as
+          <code>3x[TAB]ea008094-d995-4740-9b39-c61049356c55</code>.
+          Optional section headers like <code>Commander</code>, <code>Mainboard</code>, <code>Sideboard</code>, and <code>Maybeboard</code> are supported for the print-list format.
         </div>
 
         <p v-if="errorMessage" class="status-banner error">{{ errorMessage }}</p>

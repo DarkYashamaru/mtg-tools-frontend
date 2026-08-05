@@ -16,8 +16,8 @@ const mainboardItems = computed(() => props.collection.items.filter((item) => it
 
 <template>
   <div class="workspace-stack">
-    <DeckSection title="Commander" :items="commanderItems" :view-mode="viewMode" />
-    <DeckSection title="Deck Cards" :items="mainboardItems" :view-mode="viewMode" />
+    <DeckSection title="Commander" :items="commanderItems" :view-mode="viewMode" :group-by-category="true" />
+    <DeckSection title="Deck Cards" :items="mainboardItems" :view-mode="viewMode" :group-by-category="true" />
   </div>
 </template>
 

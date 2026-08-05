@@ -6,6 +6,8 @@ import { storeToRefs } from 'pinia'
 import { useCollectionStore } from '../stores/collectionStore'
 import { useAuthStore } from '@/stores/authStore'
 import { loadSavedCollectionGameplay } from '@/composables/useSavedCollectionGameplay'
+import CardFaceViewer from '@/components/cards/CardFaceViewer.vue'
+import type { GameplayCard } from '@/types/gameplayCard'
 
 const router = useRouter()
 const route = useRoute()
@@ -13,7 +15,7 @@ const store = useCollectionStore()
 const authStore = useAuthStore()
 
 // Bind seamlessly to the reactive store evaluation layer
-const { collection, validCommanders, scoredCommanders } = storeToRefs(store)
+const { collection, validCommanders } = storeToRefs(store)
 const { authHeaders } = storeToRefs(authStore)
 const isLoading = ref(false)
 const errorMessage = ref('')
@@ -21,6 +23,82 @@ const errorMessage = ref('')
 const activeCollectionId = computed(() => {
   const rawValue = route.params.collectionId
   return typeof rawValue === 'string' && rawValue.length > 0 ? rawValue : null
+})
+
+type CommanderInsight = {
+  commander: GameplayCard
+  cardsInColorIdentity: number
+  sharedArchetypeCards: number
+  sharedCategoryCards: number
+}
+
+function getColorIdentitySet(card: GameplayCard): Set<string> {
+  return new Set(card.color_identity.map((color) => color.symbol.toUpperCase()))
+}
+
+function isColorIdentityLegal(commander: GameplayCard, candidate: GameplayCard): boolean {
+  const commanderColors = getColorIdentitySet(commander)
+  return candidate.color_identity.every((color) => commanderColors.has(color.symbol.toUpperCase()))
+}
+
+function getCardNameSet(values: Array<{ name: string }>): Set<string> {
+  return new Set(
+    values
+      .map((value) => value?.name?.trim())
+      .filter((value): value is string => !!value)
+  )
+}
+
+const commanderInsights = computed<CommanderInsight[]>(() => {
+  if (!Array.isArray(collection.value) || !Array.isArray(validCommanders.value)) {
+    return []
+  }
+
+  return validCommanders.value
+    .map((commander) => {
+      const commanderArchetypes = getCardNameSet(commander.archetypes)
+      const commanderCategories = getCardNameSet(commander.categories)
+
+      let cardsInColorIdentity = 0
+      let sharedArchetypeCards = 0
+      let sharedCategoryCards = 0
+
+      for (const candidate of collection.value) {
+        if (candidate.oracle_id === commander.oracle_id) {
+          continue
+        }
+
+        if (!isColorIdentityLegal(commander, candidate)) {
+          continue
+        }
+
+        cardsInColorIdentity += 1
+
+        const candidateArchetypes = getCardNameSet(candidate.archetypes)
+        const candidateCategories = getCardNameSet(candidate.categories)
+
+        if ([...candidateArchetypes].some((name) => commanderArchetypes.has(name))) {
+          sharedArchetypeCards += 1
+        }
+
+        if ([...candidateCategories].some((name) => commanderCategories.has(name))) {
+          sharedCategoryCards += 1
+        }
+      }
+
+      return {
+        commander,
+        cardsInColorIdentity,
+        sharedArchetypeCards,
+        sharedCategoryCards,
+      }
+    })
+    .sort((left, right) =>
+      right.cardsInColorIdentity - left.cardsInColorIdentity
+      || right.sharedArchetypeCards - left.sharedArchetypeCards
+      || right.sharedCategoryCards - left.sharedCategoryCards
+      || left.commander.name.localeCompare(right.commander.name)
+    )
 })
 
 async function loadCollectionFromBackend(collectionId: string) {
@@ -79,8 +157,8 @@ onMounted(() => {
   <div class="container">
     <div class="header-action-row">
       <div>
-        <h1>Your Rated Commanders</h1>
-        <p class="description">Select a commander below to view matching synergistic cards in your pool.</p>
+        <h1>Possible Commanders</h1>
+        <p class="description">Select a commander to inspect theme support from the cards available in this collection.</p>
       </div>
       <button class="nav-back-btn" @click="goBackToImporter">← Import Different Deck</button>
     </div>
@@ -105,32 +183,39 @@ onMounted(() => {
       <section class="commander-section">
         <div class="commander-grid">
           <button  
-            v-for="item in scoredCommanders"  
-            :key="item?.commander?.oracle_id || Math.random().toString()"  
+            v-for="item in commanderInsights"  
+            :key="item.commander.oracle_id"  
             class="commander-card-btn"
-            @click="item?.commander?.oracle_id && handleCommanderClick(item.commander.oracle_id)"
+            @click="handleCommanderClick(item.commander.oracle_id)"
           >
             <div class="card-image-container">
-              <img  
-                v-if="item?.commander?.faces?.[0]?.small_image"  
-                :src="item.commander.faces[0].small_image"  
-                :alt="item?.commander?.name || 'Commander card image'"
-                class="card-img"
-                loading="lazy"
+              <CardFaceViewer
+                :card="item.commander"
+                image-size="small"
+                :show-flip-control="true"
+                :interactive="true"
               />
-              <div v-else class="card-img-placeholder"><span>No Image</span></div>
             </div>
 
             <div class="card-info">
               <div class="header-block">
-                <h3>{{ item?.commander?.name || 'Unknown Commander' }}</h3>
-                <p class="cmc-tag">CMC: {{ item?.commander?.cmc ?? 0 }}</p>
+                <h3>{{ item.commander.name || 'Unknown Commander' }}</h3>
+                <p class="cmc-tag">CMC: {{ item.commander.cmc ?? 0 }}</p>
               </div>
 
-              <div class="score-display">
-                <span class="score-label">Viability Score</span>
-                <span class="score-value">{{ item?.totalScore ?? 0 }}</span>
-                <span class="score-subtext">{{ item?.matchingCardCount ?? 0 }} cards in color</span>
+              <div class="metrics-display">
+                <div class="metric-row">
+                  <span class="metric-label">Cards in color identity</span>
+                  <span class="metric-value">{{ item.cardsInColorIdentity }}</span>
+                </div>
+                <div class="metric-row">
+                  <span class="metric-label">Cards sharing archetype</span>
+                  <span class="metric-value">{{ item.sharedArchetypeCards }}</span>
+                </div>
+                <div class="metric-row">
+                  <span class="metric-label">Cards sharing category</span>
+                  <span class="metric-value">{{ item.sharedCategoryCards }}</span>
+                </div>
               </div>
             </div>
           </button>

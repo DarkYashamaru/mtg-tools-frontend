@@ -413,6 +413,18 @@
 
 .tag-pill.inherited:hover { background: var(--surface-border-light); }
 
+.tag-pill.category {
+  background: rgba(56, 189, 248, 0.12);
+  color: var(--accent-electric);
+  border: 1px solid var(--accent-electric-border);
+}
+
+.tag-pill.archetype {
+  background: rgba(148, 163, 184, 0.12);
+  color: var(--text-light);
+  border: 1px solid rgba(148, 163, 184, 0.28);
+}
+
 .error-state {
   display: flex;
   justify-content: center;

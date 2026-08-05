@@ -9,6 +9,8 @@ export type CollectionItem = {
   image_uri: string | null
   amount: number
   zone: string
+  categories?: Array<{ name: string }>
+  archetypes?: Array<{ name: string }>
 }
 
 export type CollectionRecord = {

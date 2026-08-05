@@ -7,6 +7,8 @@ import { useAuthStore } from '@/stores/authStore'
 import { useCollectionStore } from '../stores/collectionStore'
 import type { Card, CardThemeResponse } from '@/utils/deckScorer'
 import { loadSavedCollectionGameplay } from '@/composables/useSavedCollectionGameplay'
+import CardFaceViewer from '@/components/cards/CardFaceViewer.vue'
+import { getDisplayFaces } from '@/components/cards/cardDisplay'
 
 const router = useRouter()
 const route = useRoute()
@@ -136,6 +138,10 @@ function openCardDetail(oracleId: string) {
   window.open(routeData.href, '_blank')
 }
 
+function getOraclePreview(card: Card): string {
+  return getDisplayFaces(card)[0]?.oracle_text || 'No oracle text registered.'
+}
+
 onMounted(() => {
   loadSelectedThemePage()
 })
@@ -195,18 +201,17 @@ onMounted(() => {
                 <td class="card-name-cell">
                   <div class="card-identity-block">
                     <div class="thumb-wrapper">
-                      <img 
-                        v-if="item.card.faces?.[0]?.normal_image"
-                        :src="item.card.faces[0].normal_image"
-                        :alt="item.card.name"
-                        class="table-thumb"
-                        loading="lazy"
+                      <CardFaceViewer
+                        :card="item.card"
+                        image-size="normal"
+                        :show-flip-control="true"
+                        :interactive="true"
+                        :compact-fallback="true"
                       />
-                      <div v-else class="thumb-placeholder"><span>No Art</span></div>
                     </div>
                     <div class="card-text-metadata">
                       <strong>{{ item.card.name }}</strong>
-                      <p class="oracle-preview">{{ item.card.faces[0]?.oracle_text || 'No oracle text registered.' }}</p>
+                      <p class="oracle-preview">{{ getOraclePreview(item.card) }}</p>
                     </div>
                   </div>
                 </td>

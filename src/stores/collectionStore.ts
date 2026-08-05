@@ -1,13 +1,27 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import { scoreCommanders, type Card } from '../utils/deckScorer'
+import type { Card } from '../utils/deckScorer'
+
+function dedupeGameplayCards(cards: Card[]): Card[] {
+  const uniqueCards = new Map<string, Card>()
+
+  for (const card of cards) {
+    if (!card?.oracle_id || uniqueCards.has(card.oracle_id)) {
+      continue
+    }
+
+    uniqueCards.set(card.oracle_id, card)
+  }
+
+  return Array.from(uniqueCards.values())
+}
 
 export const useCollectionStore = defineStore('collection', () => {
   const getInitialCollection = (): Card[] => {
     try {
       const stored = sessionStorage.getItem('mtg_bulk_collection')
       if (!stored) return []
-      return Array.isArray(JSON.parse(stored)) ? JSON.parse(stored) : []
+      return Array.isArray(JSON.parse(stored)) ? dedupeGameplayCards(JSON.parse(stored)) : []
     } catch (e) { return [] }
   }
 
@@ -16,7 +30,7 @@ export const useCollectionStore = defineStore('collection', () => {
   const selectedTheme = ref<any | null>(null) // Retain memory state handler hook if needed
 
   function setCollection(newCollection: Card[]) {
-    const cleanCollection = Array.isArray(newCollection) ? newCollection : []
+    const cleanCollection = Array.isArray(newCollection) ? dedupeGameplayCards(newCollection) : []
     collection.value = cleanCollection
     sessionStorage.setItem('mtg_bulk_collection', JSON.stringify(cleanCollection))
   }
@@ -38,19 +52,14 @@ export const useCollectionStore = defineStore('collection', () => {
     )
   })
 
-  const scoredCommanders = computed(() => {
-    if (!Array.isArray(collection.value) || !Array.isArray(validCommanders.value)) return []
-    return scoreCommanders(validCommanders.value, collection.value)
-  })
-
   const selectedCommanderData = computed(() => {
-    if (!selectedCommanderId.value || !Array.isArray(scoredCommanders.value)) return null
-    return scoredCommanders.value.find(item => item?.commander?.oracle_id === selectedCommanderId.value) || null
+    if (!selectedCommanderId.value || !Array.isArray(validCommanders.value)) return null
+    return validCommanders.value.find(card => card?.oracle_id === selectedCommanderId.value) || null
   })
 
   // 💥 NEW: Client-side Aggregation Engine Based completely on Physical Pool Availability
 const selectedCommanderThemes = computed(() => {
-  const activeCommander = selectedCommanderData.value?.commander
+  const activeCommander = selectedCommanderData.value
   // Guard check: Ensure we have a commander, they have themes, and the collection exists
   if (!activeCommander || !Array.isArray(activeCommander.themes) || !Array.isArray(collection.value)) {
     return []
@@ -110,7 +119,6 @@ const selectedCommanderThemes = computed(() => {
     selectedCommanderId,
     selectedTheme,
     validCommanders,
-    scoredCommanders,
     selectedCommanderData,
     selectedCommanderThemes, // Exposed computed utility hook
     setCollection,

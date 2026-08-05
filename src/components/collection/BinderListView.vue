@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import type { CollectionItem } from './types'
+import CardFaceViewer from '@/components/cards/CardFaceViewer.vue'
+import { groupCollectionItemsByCategory } from './grouping'
 
 interface Props {
   items: CollectionItem[]
@@ -10,6 +12,7 @@ const props = defineProps<Props>()
 const hoveredCardId = ref<number | null>(null)
 
 const hoveredItem = computed(() => props.items.find((item) => item.id === hoveredCardId.value) ?? null)
+const categoryGroups = computed(() => groupCollectionItemsByCategory(props.items))
 </script>
 
 <template>
@@ -26,47 +29,53 @@ const hoveredItem = computed(() => props.items.find((item) => item.id === hovere
     </div>
 
     <div v-else class="binder-layout">
-      <div class="table-wrap">
-        <div class="table-head">
-          <span>Qty</span>
-          <span>Card</span>
-          <span>Set</span>
-          <span>No.</span>
-          <span>Lang</span>
-        </div>
+      <div class="category-stack">
+        <section v-for="group in categoryGroups" :key="group.name" class="table-wrap">
+          <header class="category-header">
+            <h3>{{ group.name }}</h3>
+            <p>{{ group.totalCards }} cards</p>
+          </header>
 
-        <div class="table-body">
-          <div
-            v-for="item in items"
-            :key="item.id"
-            class="table-row"
-          >
-            <span class="qty">{{ item.amount }}x</span>
-            <button
-              class="name-button"
-              type="button"
-              @mouseenter="hoveredCardId = item.id"
-              @mouseleave="hoveredCardId = hoveredCardId === item.id ? null : hoveredCardId"
-              @focus="hoveredCardId = item.id"
-              @blur="hoveredCardId = hoveredCardId === item.id ? null : hoveredCardId"
-            >
-              {{ item.name || 'Unknown Card' }}
-            </button>
-            <span>{{ item.set_code }}</span>
-            <span>{{ item.collector_number }}</span>
-            <span>{{ item.lang || '—' }}</span>
+          <div class="table-head">
+            <span>Qty</span>
+            <span>Card</span>
+            <span>Set</span>
+            <span>No.</span>
+            <span>Lang</span>
           </div>
-        </div>
+
+          <div class="table-body">
+            <div
+              v-for="item in group.items"
+              :key="`${group.name}-${item.id}`"
+              class="table-row"
+            >
+              <span class="qty">{{ item.amount }}x</span>
+              <button
+                class="name-button"
+                type="button"
+                @mouseenter="hoveredCardId = item.id"
+                @mouseleave="hoveredCardId = hoveredCardId === item.id ? null : hoveredCardId"
+                @focus="hoveredCardId = item.id"
+                @blur="hoveredCardId = hoveredCardId === item.id ? null : hoveredCardId"
+              >
+                {{ item.name || 'Unknown Card' }}
+              </button>
+              <span>{{ item.set_code }}</span>
+              <span>{{ item.collector_number }}</span>
+              <span>{{ item.lang || '—' }}</span>
+            </div>
+          </div>
+        </section>
       </div>
 
       <aside class="preview-pane">
         <div v-if="hoveredItem?.image_uri" class="preview-card">
-          <img
-            :src="hoveredItem.image_uri"
-            :alt="hoveredItem.name || 'Card preview'"
-            class="preview-image"
-            loading="lazy"
-          >
+          <CardFaceViewer
+            :preview-image-url="hoveredItem.image_uri"
+            :fallback-name="hoveredItem.name"
+            image-size="normal"
+          />
           <div class="preview-copy">
             <strong>{{ hoveredItem.name }}</strong>
             <p>{{ hoveredItem.set_code }} · {{ hoveredItem.collector_number }}</p>
@@ -118,10 +127,31 @@ const hoveredItem = computed(() => props.items.find((item) => item.id === hovere
   gap: 18px;
 }
 
+.category-stack {
+  display: grid;
+  gap: 18px;
+}
+
 .table-wrap {
   overflow: hidden;
   border-radius: 18px;
   border: 1px solid var(--surface-border-light);
+}
+
+.category-header {
+  padding: 14px 16px 0;
+}
+
+.category-header h3 {
+  margin: 0;
+  color: var(--text-light);
+  font-size: 1rem;
+}
+
+.category-header p {
+  margin: 4px 0 0;
+  color: var(--text-muted);
+  font-size: 0.84rem;
 }
 
 .table-head,
@@ -193,11 +223,11 @@ const hoveredItem = computed(() => props.items.find((item) => item.id === hovere
   box-shadow: var(--shadow-md);
 }
 
-.preview-image {
+.preview-card :deep(img),
+.preview-card :deep(.face-fallback) {
   display: block;
   width: 100%;
   aspect-ratio: 0.71 / 1;
-  object-fit: cover;
 }
 
 .preview-copy {

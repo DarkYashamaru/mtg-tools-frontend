@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import CardFaceViewer from '@/components/cards/CardFaceViewer.vue'
 
 interface Props {
   commander: any
@@ -19,17 +20,12 @@ const hasTags = computed(() => commanderDirectTags.value.length > 0 || commander
 <template>
   <header class="commander-hero">
     <div class="hero-image-wrapper">
-      <img 
-        v-if="commander.faces?.[0]?.large_image" 
-        :src="commander.faces[0].large_image" 
-        :alt="commander.name"
-        class="hero-img"
-      />
-      <img 
-        v-else-if="commander.faces?.[0]?.normal_image" 
-        :src="commander.faces[0].normal_image" 
-        :alt="commander.name"
-        class="hero-img"
+      <CardFaceViewer
+        :card="commander"
+        image-size="large"
+        :show-flip-control="true"
+        :interactive="true"
+        :lazy="true"
       />
     </div>
     
@@ -91,34 +87,33 @@ const hasTags = computed(() => commanderDirectTags.value.length > 0 || commander
 .hero-image-wrapper {
   width: 180px;
   flex-shrink: 0;
-  /* Crucial: wrapper stays exactly 180px so the page flow is never interrupted */
-  position: relative; 
+  position: relative;
+  overflow: visible;
 }
 
-.hero-img {
+.hero-image-wrapper :deep(.face-viewer) {
   width: 100%;
   border-radius: 8px;
   box-shadow: var(--shadow-lg);
   border: 1px solid var(--surface-border-light);
-  
-  /* Pop-up Magic Settings */
   position: relative;
   z-index: 1;
-  transform-origin: center left; /* Anchors left side, expands out to the right */
-  will-change: transform; /* Tells the browser to optimize for hardware rendering */
+  transform-origin: center left;
+  will-change: transform;
   transition: 
-    transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), /* Smooth slight-bounce pop effect */
+    transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1),
     box-shadow 0.25s ease,
     border-color 0.25s ease;
 }
 
-.hero-img:hover {
-  transform: scale(1.5); /* Scales the entire window up to 150% size */
-  z-index: 99; /* Forces it over banners, titles, and text blocks completely */
-  border-color: var(--accent-electric); /* Subtle electric boundary glow */
+.hero-image-wrapper:hover :deep(.face-viewer),
+.hero-image-wrapper:focus-within :deep(.face-viewer) {
+  transform: scale(1.5);
+  z-index: 99;
+  border-color: var(--accent-electric);
   box-shadow: 
     0 20px 40px rgba(0, 0, 0, 0.65), 
-    0 0 0 1px rgba(56, 189, 248, 0.2); /* Deep pop-up shadow to simulate floating height */
+    0 0 0 1px rgba(56, 189, 248, 0.2);
 }
 
 .hero-text {

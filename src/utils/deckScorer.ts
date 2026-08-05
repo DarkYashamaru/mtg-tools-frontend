@@ -1,41 +1,7 @@
-// Define types matching your collection structures
-export interface Face {
-  name: string
-  mana_cost: string | null
-  oracle_text: string | null
-  supertypes: string[]
-  card_types: string[]
-  subtypes: string[]
-  small_image: string | null
-  normal_image: string | null
-  large_image: string | null
-}
+import type { GameplayCard, GameplayCardTheme } from '@/types/gameplayCard'
 
-export interface TagCollectionSchema {
-  direct: Array<{ slug: string }>
-  inherited: Array<{ slug: string }>
-}
-
-export interface CardThemeMinimal {
-  theme_id: number
-  name: string
-  curated: boolean
-  score: number
-}
-
-export interface Card {
-  oracle_id: string
-  name: string
-  cmc: number
-  layout: string
-  commander_legal: boolean
-  standard_legal: boolean
-  tags: TagCollectionSchema // Updated to use the new schema
-  faces: Face[]
-  keywords: Array<{ label: string }>
-  color_identity: Array<{ symbol: string }>
-  themes: CardThemeMinimal[]
-}
+export type CardThemeMinimal = GameplayCardTheme
+export type Card = GameplayCard
 
 // Structuring individual scores per commander
 export interface CommanderScoreResult {

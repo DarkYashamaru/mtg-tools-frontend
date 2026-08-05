@@ -6,6 +6,7 @@ import CollectionHeader from '@/components/collection/CollectionHeader.vue'
 import CollectionToolbar from '@/components/collection/CollectionToolbar.vue'
 import type { CollectionRecord, WorkspaceViewMode } from '@/components/collection/types'
 import { useAuthStore } from '@/stores/authStore'
+import type { GameplayCard } from '@/types/gameplayCard'
 
 const CommanderWorkspace = defineAsyncComponent(() => import('@/components/collection/CommanderWorkspace.vue'))
 const StandardWorkspace = defineAsyncComponent(() => import('@/components/collection/StandardWorkspace.vue'))
@@ -43,6 +44,8 @@ const filteredCollection = computed<CollectionRecord | null>(() => {
         item.collector_number ?? '',
         item.lang ?? '',
         item.zone ?? '',
+        ...(item.categories ?? []).map((category) => category.name),
+        ...(item.archetypes ?? []).map((archetype) => archetype.name),
       ].join(' ').toLowerCase()
 
       return haystack.includes(query)
@@ -89,7 +92,48 @@ async function loadCollection() {
       throw new Error(data.error || 'Unable to load collection workspace.')
     }
 
-    collection.value = data.collection as CollectionRecord
+    const loadedCollection = data.collection as CollectionRecord
+    const deckText = loadedCollection.items
+      .flatMap((item) => {
+        if (!item.name || item.amount < 1) {
+          return []
+        }
+
+        return Array.from({ length: item.amount }, () => `1 ${item.name}`)
+      })
+      .join('\n')
+
+    let gameplayCardsByOracleId = new Map<string, GameplayCard>()
+
+    if (deckText) {
+      const gameplayResponse = await fetch('/api/deck-cards', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ deck_text: deckText }),
+      })
+
+      const gameplayPayload = await gameplayResponse.json().catch(() => ({}))
+      if (!gameplayResponse.ok || !gameplayPayload.success || !Array.isArray(gameplayPayload.cards)) {
+        throw new Error(gameplayPayload.error || 'Unable to load gameplay data for this collection.')
+      }
+
+      gameplayCardsByOracleId = new Map(
+        (gameplayPayload.cards as GameplayCard[]).map((card) => [card.oracle_id, card])
+      )
+    }
+
+    collection.value = {
+      ...loadedCollection,
+      items: loadedCollection.items.map((item) => {
+        const gameplayCard = item.oracle_id ? gameplayCardsByOracleId.get(item.oracle_id) : undefined
+
+        return {
+          ...item,
+          categories: gameplayCard?.categories ?? [],
+          archetypes: gameplayCard?.archetypes ?? [],
+        }
+      }),
+    }
     viewMode.value = collection.value.deck_type.toLowerCase() === 'binder' ? 'list' : 'grid'
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : 'Unable to load collection workspace.'
