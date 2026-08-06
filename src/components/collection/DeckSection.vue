@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import CardImageTile from './CardImageTile.vue'
+import CollectionListSection from './CollectionListSection.vue'
 import type { CollectionItem, WorkspaceViewMode } from './types'
 import { groupCollectionItemsByCategory } from './grouping'
 
@@ -14,6 +15,9 @@ interface Props {
 const props = withDefaults(defineProps<Props>(), {
   groupByCategory: false,
 })
+const emit = defineEmits<{
+  hoverItem: [item: CollectionItem | null]
+}>()
 const totalCards = computed(() => props.items.reduce((sum, item) => sum + item.amount, 0))
 const categoryGroups = computed(() => (
   props.groupByCategory ? groupCollectionItemsByCategory(props.items) : []
@@ -21,7 +25,14 @@ const categoryGroups = computed(() => (
 </script>
 
 <template>
-  <section class="deck-section">
+  <CollectionListSection
+    v-if="viewMode === 'list'"
+    :title="title"
+    :items="items"
+    @hover-item="emit('hoverItem', $event)"
+  />
+
+  <section v-else class="deck-section">
     <header class="section-header">
       <div>
         <h2>{{ title }}</h2>
@@ -40,32 +51,14 @@ const categoryGroups = computed(() => (
           <p>{{ group.totalCards }} cards</p>
         </header>
 
-        <div v-if="viewMode === 'grid'" class="grid-layout">
+        <div class="grid-layout">
           <CardImageTile v-for="item in group.items" :key="`${group.name}-${item.id}`" :item="item" />
-        </div>
-
-        <div v-else class="list-layout">
-          <div v-for="item in group.items" :key="`${group.name}-${item.id}`" class="list-row">
-            <span class="qty">{{ item.amount }}x</span>
-            <strong>{{ item.name }}</strong>
-            <span>{{ item.set_code }}</span>
-            <span>{{ item.collector_number }}</span>
-          </div>
         </div>
       </section>
     </div>
 
-    <div v-else-if="viewMode === 'grid'" class="grid-layout">
+    <div v-else class="grid-layout">
       <CardImageTile v-for="item in items" :key="item.id" :item="item" />
-    </div>
-
-    <div v-else class="list-layout">
-      <div v-for="item in items" :key="item.id" class="list-row">
-        <span class="qty">{{ item.amount }}x</span>
-        <strong>{{ item.name }}</strong>
-        <span>{{ item.set_code }}</span>
-        <span>{{ item.collector_number }}</span>
-      </div>
     </div>
   </section>
 </template>
@@ -126,32 +119,5 @@ const categoryGroups = computed(() => (
   margin: 4px 0 0;
   color: var(--text-muted);
   font-size: 0.86rem;
-}
-
-.list-layout {
-  display: grid;
-  gap: 10px;
-}
-
-.list-row {
-  display: grid;
-  grid-template-columns: 80px minmax(0, 1.8fr) 100px 110px;
-  gap: 12px;
-  align-items: center;
-  padding: 12px 14px;
-  border-radius: 14px;
-  background: var(--surface-hover);
-  color: var(--text-main);
-}
-
-.qty {
-  color: var(--accent-electric);
-  font-weight: 800;
-}
-
-@media (max-width: 760px) {
-  .list-row {
-    grid-template-columns: 80px 1fr;
-  }
 }
 </style>

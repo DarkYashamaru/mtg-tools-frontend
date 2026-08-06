@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { useAuthStore } from '@/stores/authStore'
@@ -22,6 +22,12 @@ const { authHeaders, user } = storeToRefs(authStore)
 const isLoading = ref(true)
 const errorMessage = ref('')
 const collections = ref<CollectionSummary[]>([])
+const pendingDeleteCollectionId = ref<number | null>(null)
+const deletingCollectionId = ref<number | null>(null)
+
+const collectionPendingDelete = computed(() => (
+  collections.value.find((collection) => collection.id === pendingDeleteCollectionId.value) ?? null
+))
 
 function usernameLabel() {
   const currentUser = user.value
@@ -90,6 +96,55 @@ function collectionSubtitle(collection: CollectionSummary) {
   return 'Binder collection.'
 }
 
+function promptDeleteCollection(collectionId: number) {
+  pendingDeleteCollectionId.value = collectionId
+  errorMessage.value = ''
+}
+
+function cancelDeleteCollection() {
+  pendingDeleteCollectionId.value = null
+}
+
+async function confirmDeleteCollection() {
+  if (pendingDeleteCollectionId.value === null) {
+    return
+  }
+
+  deletingCollectionId.value = pendingDeleteCollectionId.value
+  errorMessage.value = ''
+
+  try {
+    const response = await fetch(`/api/collections/${pendingDeleteCollectionId.value}`, {
+      method: 'DELETE',
+      headers: {
+        ...authHeaders.value,
+      },
+    })
+
+    const data = await response.json().catch(() => ({}))
+
+    if (response.status === 401) {
+      authStore.logout()
+      router.replace({
+        name: 'login',
+        query: { redirect: route.fullPath },
+      })
+      return
+    }
+
+    if (!response.ok || !data.success) {
+      throw new Error(data.error || 'Unable to delete collection.')
+    }
+
+    collections.value = collections.value.filter((collection) => collection.id !== pendingDeleteCollectionId.value)
+    pendingDeleteCollectionId.value = null
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : 'Unable to delete collection.'
+  } finally {
+    deletingCollectionId.value = null
+  }
+}
+
 onMounted(() => {
   loadCollections()
 })
@@ -114,6 +169,32 @@ onMounted(() => {
 
       <p v-if="errorMessage" class="status-banner error">{{ errorMessage }}</p>
 
+      <section v-if="collectionPendingDelete" class="status-banner warning confirm-banner">
+        <div>
+          <strong>Delete {{ collectionPendingDelete.name }}?</strong>
+          <p>This permanently removes the collection and its saved card entries.</p>
+        </div>
+
+        <div class="confirm-actions">
+          <button
+            class="confirm-delete-button"
+            type="button"
+            :disabled="deletingCollectionId === collectionPendingDelete.id"
+            @click="confirmDeleteCollection"
+          >
+            {{ deletingCollectionId === collectionPendingDelete.id ? 'Deleting...' : 'Delete Collection' }}
+          </button>
+          <button
+            class="cancel-delete-button"
+            type="button"
+            :disabled="deletingCollectionId === collectionPendingDelete.id"
+            @click="cancelDeleteCollection"
+          >
+            Cancel
+          </button>
+        </div>
+      </section>
+
       <section class="dashboard-grid">
         <button class="collection-card master-card" type="button" disabled>
           <span class="card-kicker">System Slot</span>
@@ -127,27 +208,40 @@ onMounted(() => {
         </div>
 
         <template v-else>
-          <button
+          <article
             v-for="collection in collections"
             :key="collection.id"
             class="collection-card"
-            type="button"
-            @click="openCollection(collection.id)"
           >
-            <div v-if="isCommanderCollection(collection) && collection.commander_image_uri" class="commander-thumb-wrap">
-              <img
-                :src="collection.commander_image_uri"
-                :alt="collection.commander_name || collection.name"
-                class="commander-thumb"
-                loading="lazy"
-              >
-            </div>
+            <button
+              class="card-delete-button"
+              type="button"
+              :disabled="deletingCollectionId === collection.id"
+              @click.stop="promptDeleteCollection(collection.id)"
+            >
+              {{ deletingCollectionId === collection.id ? 'Deleting...' : 'Delete' }}
+            </button>
 
-            <span class="card-kicker">{{ collection.deck_type }}</span>
-            <h2>{{ collection.name }}</h2>
-            <p>{{ collectionSubtitle(collection) }}</p>
-            <span class="card-meta">{{ collection.item_count }} cards tracked</span>
-          </button>
+            <button
+              class="card-open-button"
+              type="button"
+              @click="openCollection(collection.id)"
+            >
+              <div v-if="isCommanderCollection(collection) && collection.commander_image_uri" class="commander-thumb-wrap">
+                <img
+                  :src="collection.commander_image_uri"
+                  :alt="collection.commander_name || collection.name"
+                  class="commander-thumb"
+                  loading="lazy"
+                >
+              </div>
+
+              <span class="card-kicker">{{ collection.deck_type }}</span>
+              <h2>{{ collection.name }}</h2>
+              <p>{{ collectionSubtitle(collection) }}</p>
+              <span class="card-meta">{{ collection.item_count }} cards tracked</span>
+            </button>
+          </article>
 
           <div v-if="collections.length === 0" class="empty-card">
             <h2>No collections yet</h2>
@@ -244,6 +338,49 @@ h1 {
   color: var(--error-text);
 }
 
+.status-banner.warning {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  align-items: center;
+  background: rgba(120, 53, 15, 0.22);
+  border-color: rgba(251, 191, 36, 0.34);
+  color: #fde68a;
+}
+
+.confirm-banner p {
+  margin: 6px 0 0;
+  color: rgba(254, 243, 199, 0.92);
+}
+
+.confirm-actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.confirm-delete-button,
+.cancel-delete-button {
+  padding: 11px 14px;
+  border-radius: 12px;
+  font-family: var(--font-sans);
+  font-size: 0.92rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.confirm-delete-button {
+  border: none;
+  background: #f97316;
+  color: #101828;
+}
+
+.cancel-delete-button {
+  border: 1px solid rgba(253, 230, 138, 0.28);
+  background: transparent;
+  color: #fde68a;
+}
+
 .dashboard-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
@@ -257,7 +394,6 @@ h1 {
 .collection-card,
 .empty-card {
   min-height: 210px;
-  padding: 24px;
   border-radius: 22px;
   border: 1px solid var(--surface-border-light);
   background:
@@ -267,12 +403,12 @@ h1 {
 }
 
 .collection-card {
+  position: relative;
   text-align: left;
-  cursor: pointer;
   transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease;
 }
 
-.collection-card:hover:enabled {
+.collection-card:hover {
   transform: translateY(-3px);
   border-color: var(--accent-electric-border);
   background:
@@ -280,12 +416,47 @@ h1 {
     var(--surface-card);
 }
 
-.collection-card:disabled {
+.empty-card {
+  padding: 24px;
+}
+
+.card-open-button {
+  width: 100%;
+  min-height: 210px;
+  padding: 24px;
+  border: none;
+  border-radius: inherit;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.card-delete-button {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 1;
+  padding: 9px 12px;
+  border: 1px solid rgba(248, 113, 113, 0.26);
+  border-radius: 999px;
+  background: rgba(127, 29, 29, 0.22);
+  color: #fecaca;
+  font-family: var(--font-sans);
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.card-delete-button:disabled,
+.confirm-delete-button:disabled,
+.cancel-delete-button:disabled {
   cursor: not-allowed;
-  opacity: 0.7;
+  opacity: 0.65;
 }
 
 .master-card {
+  padding: 24px;
   border-style: dashed;
 }
 
@@ -342,6 +513,11 @@ h1 {
 }
 
 @media (max-width: 760px) {
+  .status-banner.warning {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
   .dashboard-page {
     padding: 16px;
   }

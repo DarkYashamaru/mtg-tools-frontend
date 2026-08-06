@@ -1,10 +1,12 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, onMounted, ref } from 'vue'
+import { computed, defineAsyncComponent, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import CollectionHeader from '@/components/collection/CollectionHeader.vue'
+import CollectionHoverPreview from '@/components/collection/CollectionHoverPreview.vue'
+import CollectionManaCurve from '@/components/collection/CollectionManaCurve.vue'
 import CollectionToolbar from '@/components/collection/CollectionToolbar.vue'
-import type { CollectionRecord, WorkspaceViewMode } from '@/components/collection/types'
+import type { CollectionItem, CollectionRecord, WorkspaceViewMode } from '@/components/collection/types'
 import { useAuthStore } from '@/stores/authStore'
 import type { GameplayCard } from '@/types/gameplayCard'
 
@@ -22,6 +24,7 @@ const errorMessage = ref('')
 const collection = ref<CollectionRecord | null>(null)
 const filterText = ref('')
 const viewMode = ref<WorkspaceViewMode>('list')
+const hoveredItem = ref<CollectionItem | null>(null)
 
 const collectionId = computed(() => String(route.params.collectionId ?? ''))
 
@@ -65,6 +68,10 @@ const workspaceComponent = computed(() => {
 })
 
 const showCommanderBuilderAction = computed(() => collection.value?.deck_type.toLowerCase() === 'binder')
+const shouldShowManaCurve = computed(() => {
+  const deckType = collection.value?.deck_type.toLowerCase()
+  return deckType === 'commander' || deckType === 'standard'
+})
 
 async function loadCollection() {
   isLoading.value = true
@@ -129,11 +136,16 @@ async function loadCollection() {
 
         return {
           ...item,
+          cmc: gameplayCard?.cmc ?? 0,
+          card_types: Array.from(new Set(
+            gameplayCard?.faces.flatMap((face) => face.card_types ?? []) ?? []
+          )),
           categories: gameplayCard?.categories ?? [],
           archetypes: gameplayCard?.archetypes ?? [],
         }
       }),
     }
+    hoveredItem.value = null
     viewMode.value = collection.value.deck_type.toLowerCase() === 'binder' ? 'list' : 'grid'
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : 'Unable to load collection workspace.'
@@ -144,6 +156,10 @@ async function loadCollection() {
 
 function goBack() {
   router.push({ name: 'deck-dashboard' })
+}
+
+function handleHoverItem(item: CollectionItem | null) {
+  hoveredItem.value = item
 }
 
 function goToCommanderBuilder() {
@@ -159,6 +175,16 @@ function goToCommanderBuilder() {
 
 onMounted(() => {
   loadCollection()
+})
+
+watch(viewMode, (mode) => {
+  if (mode !== 'list') {
+    hoveredItem.value = null
+  }
+})
+
+watch(filterText, () => {
+  hoveredItem.value = null
 })
 </script>
 
@@ -189,10 +215,21 @@ onMounted(() => {
           @create-commander-deck="goToCommanderBuilder"
         />
         <CollectionToolbar v-model="viewMode" v-model:filter-text="filterText" :collection="collection" />
+        <CollectionManaCurve v-if="shouldShowManaCurve" :collection="collection" />
 
         <div v-if="filteredCollection.items.length === 0" class="state-panel">
           <h2>No cards match this filter</h2>
           <p>Try a different local filter or clear the current search.</p>
+        </div>
+
+        <div v-else-if="viewMode === 'list'" class="workspace-content-grid">
+          <component
+            :is="workspaceComponent"
+            :collection="filteredCollection"
+            :view-mode="viewMode"
+            @hover-item="handleHoverItem"
+          />
+          <CollectionHoverPreview :item="hoveredItem" />
         </div>
 
         <component
@@ -216,6 +253,13 @@ onMounted(() => {
   margin: 0 auto;
   display: grid;
   gap: 18px;
+}
+
+.workspace-content-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 18px;
+  align-items: start;
 }
 
 .nav-row {
@@ -266,6 +310,12 @@ onMounted(() => {
 @media (max-width: 760px) {
   .workspace-page {
     padding: 14px;
+  }
+}
+
+@media (max-width: 980px) {
+  .workspace-content-grid {
+    grid-template-columns: 1fr;
   }
 }
 </style>

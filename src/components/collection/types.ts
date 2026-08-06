@@ -3,6 +3,8 @@ export type CollectionItem = {
   card_id: string
   oracle_id: string | null
   name: string | null
+  cmc?: number
+  card_types?: string[]
   set_code: string | null
   collector_number: string | null
   lang: string | null
