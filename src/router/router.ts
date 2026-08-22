@@ -61,6 +61,12 @@ const router = createRouter({
       component: () => import('@/views/SelectedTheme.vue'),
       meta: { requiresAuth: true },
     },
+    {
+      path: '/tools/bulk-deck-builder/collections/:collectionId/commanders/:commanderId/themes/:themeId/builder/:builderCollectionId',
+      name: 'commander-builder',
+      component: () => import('@/views/CommanderBuilderView.vue'),
+      meta: { requiresAuth: true },
+    },
     { path: '/login', name: 'login', component: () => import('@/views/LoginView.vue') },
     
     // Named search routes

@@ -1,18 +1,33 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { CollectionItem } from './types'
+import type { CollectionCardContextMenuPayload, CollectionItem } from './types'
 
 interface Props {
   title: string
   emptyMessage?: string
   items: CollectionItem[]
+  hideSingletonAmount?: boolean
+  mutatingItemIds?: Array<string | number>
+  eyebrow?: string
+  description?: string
+  showCardCount?: boolean
+  showQuantityActions?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
   emptyMessage: 'No cards in this section.',
+  hideSingletonAmount: false,
+  mutatingItemIds: () => [],
+  eyebrow: '',
+  description: '',
+  showCardCount: true,
+  showQuantityActions: true,
 })
 const emit = defineEmits<{
   hoverItem: [item: CollectionItem | null]
+  contextMenu: [payload: CollectionCardContextMenuPayload]
+  incrementItem: [item: CollectionItem]
+  decrementItem: [item: CollectionItem]
 }>()
 const totalCards = computed(() => props.items.reduce((sum, item) => sum + item.amount, 0))
 
@@ -23,14 +38,35 @@ function handleItemEnter(item: CollectionItem) {
 function clearHover() {
   emit('hoverItem', null)
 }
+
+function showQuantity(item: CollectionItem) {
+  return !(props.hideSingletonAmount && item.amount === 1)
+}
+
+function openContextMenu(event: MouseEvent, item: CollectionItem) {
+  emit('contextMenu', {
+    item,
+    x: event.clientX,
+    y: event.clientY,
+  })
+}
+
+function isMutating(item: CollectionItem) {
+  return props.mutatingItemIds.includes(item.id)
+}
 </script>
 
 <template>
   <section class="list-section-shell">
     <header class="section-header">
       <div>
+        <p v-if="eyebrow" class="section-eyebrow">{{ eyebrow }}</p>
         <h2>{{ title }}</h2>
-        <p>{{ totalCards }} cards</p>
+        <p v-if="showCardCount || description">
+          <template v-if="showCardCount">{{ totalCards }} cards</template>
+          <template v-if="showCardCount && description"> · </template>
+          <template v-if="description">{{ description }}</template>
+        </p>
       </div>
     </header>
 
@@ -46,6 +82,7 @@ function clearHover() {
           <span>Set</span>
           <span>No.</span>
           <span>Lang</span>
+          <span>{{ showQuantityActions ? 'Adjust' : 'Status' }}</span>
         </div>
 
         <div class="table-body">
@@ -57,12 +94,34 @@ function clearHover() {
             @mouseenter="handleItemEnter(item)"
             @focus="handleItemEnter(item)"
             @blur="clearHover()"
+            @contextmenu.prevent="openContextMenu($event, item)"
           >
-            <span class="qty">{{ item.amount }}x</span>
+            <span class="qty">{{ showQuantity(item) ? `${item.amount}x` : '' }}</span>
             <strong class="name-text">{{ item.name || 'Unknown Card' }}</strong>
             <span>{{ item.set_code || '—' }}</span>
             <span>{{ item.collector_number || '—' }}</span>
             <span>{{ item.lang || '—' }}</span>
+            <div class="row-actions">
+              <button
+                v-if="showQuantityActions"
+                class="quantity-button"
+                type="button"
+                :disabled="isMutating(item)"
+                @click.stop="emit('decrementItem', item)"
+              >
+                -
+              </button>
+              <button
+                v-if="showQuantityActions"
+                class="quantity-button"
+                type="button"
+                :disabled="isMutating(item)"
+                @click.stop="emit('incrementItem', item)"
+              >
+                +
+              </button>
+              <span v-if="!showQuantityActions" class="read-only-label">Read-only</span>
+            </div>
           </div>
         </div>
       </div>
@@ -88,6 +147,15 @@ function clearHover() {
   font-size: 1.25rem;
 }
 
+.section-eyebrow {
+  margin: 0 0 6px;
+  color: var(--accent-electric);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
 .section-header p {
   margin: 4px 0 0;
   color: var(--text-muted);
@@ -109,7 +177,7 @@ function clearHover() {
 .table-head,
 .table-row {
   display: grid;
-  grid-template-columns: 90px minmax(0, 1.8fr) 100px 90px 90px;
+  grid-template-columns: 90px minmax(0, 1.8fr) 100px 90px 90px 88px;
   gap: 12px;
   align-items: center;
   padding: 12px 14px;
@@ -151,6 +219,37 @@ function clearHover() {
   font-weight: 700;
 }
 
+.row-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 6px;
+}
+
+.read-only-label {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.quantity-button {
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--surface-border-light);
+  border-radius: 8px;
+  background: var(--surface-hover);
+  color: var(--text-main);
+  font-family: var(--font-sans);
+  font-size: 0.95rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.quantity-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
 .table-row:hover .name-text,
 .table-row:focus-visible .name-text {
   color: var(--accent-electric);
@@ -159,11 +258,12 @@ function clearHover() {
 @media (max-width: 760px) {
   .table-head,
   .table-row {
-    grid-template-columns: 72px minmax(0, 1fr) 72px;
+    grid-template-columns: 72px minmax(0, 1fr) 72px 76px;
   }
 
   .table-head span:nth-child(4),
   .table-head span:nth-child(5),
+  .table-head span:nth-child(6),
   .table-row span:nth-child(4),
   .table-row span:nth-child(5) {
     display: none;

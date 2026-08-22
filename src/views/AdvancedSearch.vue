@@ -1,8 +1,13 @@
 <script setup lang="ts">
-import { ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, watchEffect, ref } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
+import { storeToRefs } from 'pinia'
+import { useAuthStore } from '@/stores/authStore'
 
 const router = useRouter()
+const route = useRoute()
+const authStore = useAuthStore()
+const { isAuthenticated } = storeToRefs(authStore)
 
 const name = ref('')
 const cardType = ref('')
@@ -10,8 +15,13 @@ const oracleText = ref('')
 const excludeOracleText = ref('')
 const tags = ref('')
 const excludeTags = ref('')
+const markers = ref('')
+const excludeMarkers = ref('')
 const exactColors = ref(false)
 const selectedColors = ref<string[]>([])
+const colorlessOnly = ref(false)
+const searchMasterOnly = ref(false)
+const canSearchMasterCollection = computed(() => isAuthenticated.value)
 
 const colorOptions = [
   { symbol: 'W', label: 'White', hex: '#fef3c7', text: '#78350f' },
@@ -22,11 +32,20 @@ const colorOptions = [
 ]
 
 function toggleColor(color: string) {
+  colorlessOnly.value = false
   const index = selectedColors.value.indexOf(color)
   if (index >= 0) {
     selectedColors.value.splice(index, 1)
   } else {
     selectedColors.value.push(color)
+  }
+}
+
+function toggleColorlessOnly() {
+  colorlessOnly.value = !colorlessOnly.value
+  if (colorlessOnly.value) {
+    selectedColors.value = []
+    exactColors.value = false
   }
 }
 
@@ -37,8 +56,12 @@ function clearFilters() {
   excludeOracleText.value = ''
   tags.value = ''
   excludeTags.value = ''
+  markers.value = ''
+  excludeMarkers.value = ''
   exactColors.value = false
   selectedColors.value = []
+  colorlessOnly.value = false
+  searchMasterOnly.value = false
 }
 
 function runSearch() {
@@ -50,12 +73,21 @@ function runSearch() {
   if (excludeOracleText.value.trim()) queryPayload.exclude_oracle_text = excludeOracleText.value.trim()
   if (tags.value.trim()) queryPayload.tags = tags.value.trim()
   if (excludeTags.value.trim()) queryPayload.exclude_tags = excludeTags.value.trim()
+  if (markers.value.trim()) queryPayload.markers = markers.value.trim()
+  if (excludeMarkers.value.trim()) queryPayload.exclude_markers = excludeMarkers.value.trim()
   if (exactColors.value) queryPayload.exact_colors = 'true'
   if (selectedColors.value.length) queryPayload.colors = selectedColors.value
+  if (colorlessOnly.value) queryPayload.colorless = 'true'
+  if (searchMasterOnly.value && canSearchMasterCollection.value) queryPayload.scope = 'master'
 
   // Hand off execution cleanly to the specialized query route
   router.push({ name: 'search-results', query: queryPayload })
 }
+
+watchEffect(() => {
+  searchMasterOnly.value = route.query.scope === 'master' && canSearchMasterCollection.value
+  colorlessOnly.value = route.query.colorless === 'true'
+})
 </script>
 
 <template>
@@ -98,10 +130,20 @@ function runSearch() {
           <label for="tags-exc">Tags Excludes</label>
           <input id="tags-exc" v-model="excludeTags" placeholder="stax, combo-piece">
         </div>
+
+        <div class="field">
+          <label for="markers-inc">Markers Includes</label>
+          <input id="markers-inc" v-model="markers" placeholder="cheap-spell">
+        </div>
+
+        <div class="field">
+          <label for="markers-exc">Markers Excludes</label>
+          <input id="markers-exc" v-model="excludeMarkers" placeholder="cheap-spell">
+        </div>
       </div>
 
       <div class="colors-section">
-        <span class="section-label">Color Identity</span>
+        <span class="section-label">Color And Mana Filters</span>
         <div class="colors-wrapper">
           <div class="color-buttons">
             <button
@@ -119,14 +161,35 @@ function runSearch() {
             >
               {{ color.symbol }}
             </button>
+            <button
+              type="button"
+              class="color-btn colorless-btn"
+              :class="{ active: colorlessOnly }"
+              title="Only colorless mana in mana cost"
+              @click="toggleColorlessOnly"
+            >
+              C
+            </button>
           </div>
 
           <label class="checkbox-row">
-            <input v-model="exactColors" type="checkbox">
+            <input v-model="exactColors" type="checkbox" :disabled="colorlessOnly">
             <span>Match exact color scheme</span>
           </label>
+
+          <label class="checkbox-row">
+            <input v-model="searchMasterOnly" type="checkbox" :disabled="!canSearchMasterCollection">
+            <span>Search only my master collection</span>
+          </label>
         </div>
+        <p class="filter-note">
+          `C` searches cards whose mana cost uses only generic or colorless mana symbols, such as `Sol Ring` or `Hero's Blade`.
+        </p>
       </div>
+
+      <p v-if="!canSearchMasterCollection" class="auth-note">
+        Log in to search only within your master collection.
+      </p>
 
       <div class="actions-row">
         <button type="submit" class="btn btn-primary">Search Cards</button>

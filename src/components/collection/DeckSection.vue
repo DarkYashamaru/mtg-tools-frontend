@@ -2,25 +2,51 @@
 import { computed } from 'vue'
 import CardImageTile from './CardImageTile.vue'
 import CollectionListSection from './CollectionListSection.vue'
-import type { CollectionItem, WorkspaceViewMode } from './types'
+import type {
+  CollectionCardContextMenuPayload,
+  CollectionItem,
+  WorkspaceOrganizationMode,
+  WorkspaceViewMode,
+} from './types'
 import { groupCollectionItemsByCategory } from './grouping'
 
 interface Props {
   title: string
   items: CollectionItem[]
   viewMode: WorkspaceViewMode
-  groupByCategory?: boolean
+  organizationMode?: WorkspaceOrganizationMode
+  hideSingletonAmount?: boolean
+  mutatingItemIds?: Array<string | number>
+  showQuantityActions?: boolean
+  eyebrow?: string
+  description?: string
+  showCardCount?: boolean
+  primaryActionLabel?: string
+  primaryActionDisabled?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
-  groupByCategory: false,
+  organizationMode: 'section',
+  hideSingletonAmount: false,
+  mutatingItemIds: () => [],
+  showQuantityActions: true,
+  eyebrow: '',
+  description: '',
+  showCardCount: true,
+  primaryActionLabel: '',
+  primaryActionDisabled: false,
 })
 const emit = defineEmits<{
   hoverItem: [item: CollectionItem | null]
+  contextMenu: [payload: CollectionCardContextMenuPayload]
+  incrementItem: [item: CollectionItem]
+  decrementItem: [item: CollectionItem]
+  cardClick: [item: CollectionItem]
+  primaryAction: [item: CollectionItem]
 }>()
 const totalCards = computed(() => props.items.reduce((sum, item) => sum + item.amount, 0))
 const categoryGroups = computed(() => (
-  props.groupByCategory ? groupCollectionItemsByCategory(props.items) : []
+  props.organizationMode === 'category' ? groupCollectionItemsByCategory(props.items) : []
 ))
 </script>
 
@@ -29,14 +55,28 @@ const categoryGroups = computed(() => (
     v-if="viewMode === 'list'"
     :title="title"
     :items="items"
+    :hide-singleton-amount="hideSingletonAmount"
+    :mutating-item-ids="mutatingItemIds"
+    :eyebrow="eyebrow"
+    :description="description"
+    :show-card-count="showCardCount"
+    :show-quantity-actions="showQuantityActions"
     @hover-item="emit('hoverItem', $event)"
+    @context-menu="emit('contextMenu', $event)"
+    @increment-item="emit('incrementItem', $event)"
+    @decrement-item="emit('decrementItem', $event)"
   />
 
   <section v-else class="deck-section">
     <header class="section-header">
       <div>
+        <p v-if="eyebrow" class="section-eyebrow">{{ eyebrow }}</p>
         <h2>{{ title }}</h2>
-        <p>{{ totalCards }} cards</p>
+        <p v-if="showCardCount || description">
+          <template v-if="showCardCount">{{ totalCards }} cards</template>
+          <template v-if="showCardCount && description"> · </template>
+          <template v-if="description">{{ description }}</template>
+        </p>
       </div>
     </header>
 
@@ -44,7 +84,7 @@ const categoryGroups = computed(() => (
       No cards in this section.
     </div>
 
-    <div v-else-if="groupByCategory && categoryGroups.length" class="category-stack">
+    <div v-else-if="organizationMode === 'category' && categoryGroups.length" class="category-stack">
       <section v-for="group in categoryGroups" :key="group.name" class="category-block">
         <header class="category-header">
           <h3>{{ group.name }}</h3>
@@ -52,13 +92,41 @@ const categoryGroups = computed(() => (
         </header>
 
         <div class="grid-layout">
-          <CardImageTile v-for="item in group.items" :key="`${group.name}-${item.id}`" :item="item" />
+          <CardImageTile
+            v-for="item in group.items"
+            :key="`${group.name}-${item.id}`"
+            :item="item"
+            :hide-singleton-amount="hideSingletonAmount"
+            :is-mutating="mutatingItemIds.includes(item.id)"
+            :show-quantity-actions="showQuantityActions"
+            :primary-action-label="primaryActionLabel"
+            :primary-action-disabled="primaryActionDisabled"
+            @context-menu="emit('contextMenu', $event)"
+            @increment-item="emit('incrementItem', $event)"
+            @decrement-item="emit('decrementItem', $event)"
+            @card-click="emit('cardClick', $event)"
+            @primary-action="emit('primaryAction', $event)"
+          />
         </div>
       </section>
     </div>
 
     <div v-else class="grid-layout">
-      <CardImageTile v-for="item in items" :key="item.id" :item="item" />
+      <CardImageTile
+        v-for="item in items"
+        :key="item.id"
+        :item="item"
+        :hide-singleton-amount="hideSingletonAmount"
+        :is-mutating="mutatingItemIds.includes(item.id)"
+        :show-quantity-actions="showQuantityActions"
+        :primary-action-label="primaryActionLabel"
+        :primary-action-disabled="primaryActionDisabled"
+        @context-menu="emit('contextMenu', $event)"
+        @increment-item="emit('incrementItem', $event)"
+        @decrement-item="emit('decrementItem', $event)"
+        @card-click="emit('cardClick', $event)"
+        @primary-action="emit('primaryAction', $event)"
+      />
     </div>
   </section>
 </template>
@@ -79,6 +147,15 @@ const categoryGroups = computed(() => (
   margin: 0;
   color: var(--text-light);
   font-size: 1.25rem;
+}
+
+.section-eyebrow {
+  margin: 0 0 6px;
+  color: var(--accent-electric);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
 }
 
 .section-header p {

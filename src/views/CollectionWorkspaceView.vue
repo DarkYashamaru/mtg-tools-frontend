@@ -1,12 +1,19 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, onMounted, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import CollectionHeader from '@/components/collection/CollectionHeader.vue'
 import CollectionHoverPreview from '@/components/collection/CollectionHoverPreview.vue'
 import CollectionManaCurve from '@/components/collection/CollectionManaCurve.vue'
 import CollectionToolbar from '@/components/collection/CollectionToolbar.vue'
-import type { CollectionItem, CollectionRecord, WorkspaceViewMode } from '@/components/collection/types'
+import type {
+  CollectionCardContextMenuPayload,
+  CollectionCardSearchResult,
+  CollectionItem,
+  CollectionRecord,
+  WorkspaceOrganizationMode,
+  WorkspaceViewMode,
+} from '@/components/collection/types'
 import { useAuthStore } from '@/stores/authStore'
 import type { GameplayCard } from '@/types/gameplayCard'
 
@@ -23,10 +30,22 @@ const isLoading = ref(true)
 const errorMessage = ref('')
 const collection = ref<CollectionRecord | null>(null)
 const filterText = ref('')
+const addCardQuery = ref('')
+const addCardSuggestions = ref<CollectionCardSearchResult[]>([])
+const isSearchingCards = ref(false)
+const isAddingCard = ref(false)
 const viewMode = ref<WorkspaceViewMode>('list')
+const organizationMode = ref<WorkspaceOrganizationMode>('section')
 const hoveredItem = ref<CollectionItem | null>(null)
+const contextMenuState = ref<CollectionCardContextMenuPayload | null>(null)
+const mutatingItemIds = ref<Array<string | number>>([])
+let addCardSearchTimeout: ReturnType<typeof window.setTimeout> | null = null
+let latestAddCardSearchRequest = 0
 
 const collectionId = computed(() => String(route.params.collectionId ?? ''))
+const addCardZone = computed(() => 'mainboard')
+const isMasterCollectionRoute = computed(() => collectionId.value === 'master')
+const isReadOnlyCollection = computed(() => collection.value?.is_read_only === true)
 
 const filteredCollection = computed<CollectionRecord | null>(() => {
   if (!collection.value) {
@@ -67,18 +86,137 @@ const workspaceComponent = computed(() => {
   return BinderWorkspace
 })
 
-const showCommanderBuilderAction = computed(() => collection.value?.deck_type.toLowerCase() === 'binder')
+const showCommanderBuilderAction = computed(() => (
+  collection.value?.deck_type.toLowerCase() === 'binder' && !collection.value?.is_virtual
+))
+const showMasterSearchAction = computed(() => collection.value?.is_virtual === true)
 const shouldShowManaCurve = computed(() => {
   const deckType = collection.value?.deck_type.toLowerCase()
   return deckType === 'commander' || deckType === 'standard'
 })
+
+function mergeCollectionMetadata(updatedCollection: CollectionRecord): CollectionRecord {
+  const currentCollection = collection.value
+  if (!currentCollection) {
+    return updatedCollection
+  }
+
+  const currentItemsById = new Map(currentCollection.items.map((item) => [item.id, item]))
+  const currentItemsByCardZone = new Map(
+    currentCollection.items.map((item) => [`${item.card_id}:${item.zone}`, item])
+  )
+
+  return {
+    ...updatedCollection,
+    items: updatedCollection.items.map((item) => {
+      const existingItem = currentItemsById.get(item.id) ?? currentItemsByCardZone.get(`${item.card_id}:${item.zone}`)
+
+      return {
+        ...item,
+        cmc: existingItem?.cmc ?? 0,
+        card_types: existingItem?.card_types ?? [],
+        categories: existingItem?.categories ?? [],
+        archetypes: existingItem?.archetypes ?? [],
+      }
+    }),
+  }
+}
+
+function buildItemMetadata(gameplayCard: GameplayCard | undefined) {
+  return {
+    cmc: gameplayCard?.cmc ?? 0,
+    card_types: Array.from(new Set(
+      gameplayCard?.faces.flatMap((face) => face.card_types ?? []) ?? []
+    )),
+    categories: gameplayCard?.categories ?? [],
+    archetypes: gameplayCard?.archetypes ?? [],
+  }
+}
+
+async function fetchGameplayCardsByName(items: CollectionItem[]) {
+  const uniqueNames = Array.from(new Set(
+    items
+      .map((item) => item.name?.trim())
+      .filter((value): value is string => Boolean(value))
+  ))
+
+  if (uniqueNames.length === 0) {
+    return new Map<string, GameplayCard>()
+  }
+
+  const gameplayResponse = await fetch('/api/deck-cards', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      deck_text: uniqueNames.map((name) => `1 ${name}`).join('\n'),
+    }),
+  })
+
+  const gameplayPayload = await gameplayResponse.json().catch(() => ({}))
+  if (!gameplayResponse.ok || !gameplayPayload.success || !Array.isArray(gameplayPayload.cards)) {
+    throw new Error(gameplayPayload.error || 'Unable to load gameplay data for this collection.')
+  }
+
+  return new Map(
+    (gameplayPayload.cards as GameplayCard[]).map((card) => [card.oracle_id, card])
+  )
+}
+
+async function enrichCollectionWithGameplay(
+  baseCollection: CollectionRecord,
+  metadataSource: CollectionRecord | null = null,
+) {
+  const existingMetadataByOracleId = new Map(
+    (metadataSource?.items ?? [])
+      .filter((item) => item.oracle_id)
+      .map((item) => [
+        item.oracle_id as string,
+        {
+          cmc: item.cmc ?? 0,
+          card_types: item.card_types ?? [],
+          categories: item.categories ?? [],
+          archetypes: item.archetypes ?? [],
+        },
+      ])
+  )
+
+  const missingItems = baseCollection.items.filter((item) => (
+    Boolean(item.oracle_id)
+    && !existingMetadataByOracleId.has(item.oracle_id as string)
+    && Boolean(item.name)
+  ))
+
+  const fetchedGameplayByOracleId = missingItems.length > 0
+    ? await fetchGameplayCardsByName(missingItems)
+    : new Map<string, GameplayCard>()
+
+  return {
+    ...baseCollection,
+    items: baseCollection.items.map((item) => {
+      const existingMetadata = item.oracle_id
+        ? existingMetadataByOracleId.get(item.oracle_id)
+        : undefined
+      const gameplayCard = item.oracle_id
+        ? fetchedGameplayByOracleId.get(item.oracle_id)
+        : undefined
+
+      return {
+        ...item,
+        ...(existingMetadata ?? buildItemMetadata(gameplayCard)),
+      }
+    }),
+  }
+}
 
 async function loadCollection() {
   isLoading.value = true
   errorMessage.value = ''
 
   try {
-    const response = await fetch(`/api/collections/${collectionId.value}`, {
+    const collectionEndpoint = isMasterCollectionRoute.value
+      ? '/api/collections/master'
+      : `/api/collections/${collectionId.value}`
+    const response = await fetch(collectionEndpoint, {
       headers: {
         ...authHeaders.value,
       },
@@ -100,52 +238,9 @@ async function loadCollection() {
     }
 
     const loadedCollection = data.collection as CollectionRecord
-    const deckText = loadedCollection.items
-      .flatMap((item) => {
-        if (!item.name || item.amount < 1) {
-          return []
-        }
-
-        return Array.from({ length: item.amount }, () => `1 ${item.name}`)
-      })
-      .join('\n')
-
-    let gameplayCardsByOracleId = new Map<string, GameplayCard>()
-
-    if (deckText) {
-      const gameplayResponse = await fetch('/api/deck-cards', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ deck_text: deckText }),
-      })
-
-      const gameplayPayload = await gameplayResponse.json().catch(() => ({}))
-      if (!gameplayResponse.ok || !gameplayPayload.success || !Array.isArray(gameplayPayload.cards)) {
-        throw new Error(gameplayPayload.error || 'Unable to load gameplay data for this collection.')
-      }
-
-      gameplayCardsByOracleId = new Map(
-        (gameplayPayload.cards as GameplayCard[]).map((card) => [card.oracle_id, card])
-      )
-    }
-
-    collection.value = {
-      ...loadedCollection,
-      items: loadedCollection.items.map((item) => {
-        const gameplayCard = item.oracle_id ? gameplayCardsByOracleId.get(item.oracle_id) : undefined
-
-        return {
-          ...item,
-          cmc: gameplayCard?.cmc ?? 0,
-          card_types: Array.from(new Set(
-            gameplayCard?.faces.flatMap((face) => face.card_types ?? []) ?? []
-          )),
-          categories: gameplayCard?.categories ?? [],
-          archetypes: gameplayCard?.archetypes ?? [],
-        }
-      }),
-    }
+    collection.value = await enrichCollectionWithGameplay(loadedCollection)
     hoveredItem.value = null
+    organizationMode.value = 'section'
     viewMode.value = collection.value.deck_type.toLowerCase() === 'binder' ? 'list' : 'grid'
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : 'Unable to load collection workspace.'
@@ -162,6 +257,183 @@ function handleHoverItem(item: CollectionItem | null) {
   hoveredItem.value = item
 }
 
+function beginItemMutation(itemId: string | number) {
+  mutatingItemIds.value = [...new Set([...mutatingItemIds.value, itemId])]
+}
+
+function endItemMutation(itemId: string | number) {
+  mutatingItemIds.value = mutatingItemIds.value.filter((id) => id !== itemId)
+}
+
+async function mutateItemQuantity(item: CollectionItem, direction: 'increment' | 'decrement') {
+  if (!collection.value || isReadOnlyCollection.value) {
+    return
+  }
+
+  beginItemMutation(item.id)
+  errorMessage.value = ''
+  closeContextMenu()
+
+  try {
+    const response = direction === 'increment'
+      ? await fetch(`/api/collections/${collection.value.id}/items`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...authHeaders.value,
+          },
+          body: JSON.stringify({
+            card_id: item.card_id,
+            zone: item.zone,
+            amount: 1,
+          }),
+        })
+      : await fetch(`/api/collections/${collection.value.id}/items/${item.id}?amount=1`, {
+          method: 'DELETE',
+          headers: {
+            ...authHeaders.value,
+          },
+        })
+
+    const data = await response.json().catch(() => ({}))
+
+    if (response.status === 401) {
+      authStore.logout()
+      router.replace({
+        name: 'login',
+        query: { redirect: route.fullPath },
+      })
+      return
+    }
+
+    if (!response.ok || !data.success || !data.collection) {
+      throw new Error(data.error || 'Unable to update collection item.')
+    }
+
+    const updatedCollection = mergeCollectionMetadata(data.collection as CollectionRecord)
+    collection.value = updatedCollection
+
+    hoveredItem.value = updatedCollection.items.find((candidate) => candidate.id === item.id) ?? null
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : 'Unable to update collection item.'
+  } finally {
+    endItemMutation(item.id)
+  }
+}
+
+function dismissAddCardSuggestions() {
+  addCardSuggestions.value = []
+}
+
+async function searchAddCardSuggestions(query: string, requestId: number) {
+  isSearchingCards.value = true
+
+  try {
+    const response = await fetch(`/api/cards/search?q=${encodeURIComponent(query)}&limit=8`)
+    const data = await response.json().catch(() => ({}))
+
+    if (requestId !== latestAddCardSearchRequest) {
+      return
+    }
+
+    if (!response.ok || !data.success || !Array.isArray(data.cards)) {
+      throw new Error(data.error || 'Unable to search cards.')
+    }
+
+    addCardSuggestions.value = data.cards as CollectionCardSearchResult[]
+  } catch (error) {
+    if (requestId === latestAddCardSearchRequest) {
+      addCardSuggestions.value = []
+      errorMessage.value = error instanceof Error ? error.message : 'Unable to search cards.'
+    }
+  } finally {
+    if (requestId === latestAddCardSearchRequest) {
+      isSearchingCards.value = false
+    }
+  }
+}
+
+async function addSuggestedCard(suggestion: CollectionCardSearchResult) {
+  if (!collection.value || isAddingCard.value || isReadOnlyCollection.value) {
+    return
+  }
+
+  isAddingCard.value = true
+  errorMessage.value = ''
+  addCardQuery.value = ''
+  dismissAddCardSuggestions()
+
+  try {
+    const response = await fetch(`/api/collections/${collection.value.id}/items`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...authHeaders.value,
+      },
+      body: JSON.stringify({
+        card_id: suggestion.card_id,
+        zone: addCardZone.value,
+        amount: 1,
+      }),
+    })
+
+    const data = await response.json().catch(() => ({}))
+
+    if (response.status === 401) {
+      authStore.logout()
+      router.replace({
+        name: 'login',
+        query: { redirect: route.fullPath },
+      })
+      return
+    }
+
+    if (!response.ok || !data.success || !data.collection) {
+      throw new Error(data.error || 'Unable to add card to collection.')
+    }
+
+    const mergedCollection = mergeCollectionMetadata(data.collection as CollectionRecord)
+    collection.value = await enrichCollectionWithGameplay(mergedCollection, collection.value)
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : 'Unable to add card to collection.'
+  } finally {
+    isAddingCard.value = false
+  }
+}
+
+function handleContextMenu(payload: CollectionCardContextMenuPayload) {
+  contextMenuState.value = payload
+}
+
+function closeContextMenu() {
+  contextMenuState.value = null
+}
+
+function openCardDetails() {
+  const item = contextMenuState.value?.item
+  if (!item?.oracle_id) {
+    closeContextMenu()
+    return
+  }
+
+  const routeData = router.resolve({
+    name: 'card-detail',
+    params: { id: item.oracle_id },
+  })
+  window.open(routeData.href, '_blank')
+  closeContextMenu()
+}
+
+function handleGlobalPointer() {
+  closeContextMenu()
+}
+
+function handleGlobalEscape(event: KeyboardEvent) {
+  if (event.key === 'Escape') {
+    closeContextMenu()
+  }
+}
+
 function goToCommanderBuilder() {
   if (!collection.value || collection.value.deck_type.toLowerCase() !== 'binder') {
     return
@@ -173,18 +445,60 @@ function goToCommanderBuilder() {
   })
 }
 
+function goToMasterAdvancedSearch() {
+  router.push({
+    name: 'advanced-search',
+    query: { scope: 'master' },
+  })
+}
+
 onMounted(() => {
+  window.addEventListener('click', handleGlobalPointer)
+  window.addEventListener('scroll', handleGlobalPointer, true)
+  window.addEventListener('keydown', handleGlobalEscape)
   loadCollection()
+})
+
+onBeforeUnmount(() => {
+  if (addCardSearchTimeout !== null) {
+    window.clearTimeout(addCardSearchTimeout)
+  }
+  window.removeEventListener('click', handleGlobalPointer)
+  window.removeEventListener('scroll', handleGlobalPointer, true)
+  window.removeEventListener('keydown', handleGlobalEscape)
 })
 
 watch(viewMode, (mode) => {
   if (mode !== 'list') {
     hoveredItem.value = null
   }
+  closeContextMenu()
 })
 
 watch(filterText, () => {
   hoveredItem.value = null
+  closeContextMenu()
+})
+
+watch(addCardQuery, (value) => {
+  const query = value.trim()
+
+  if (addCardSearchTimeout !== null) {
+    window.clearTimeout(addCardSearchTimeout)
+    addCardSearchTimeout = null
+  }
+
+  if (query.length < 3) {
+    latestAddCardSearchRequest += 1
+    isSearchingCards.value = false
+    dismissAddCardSuggestions()
+    return
+  }
+
+  addCardSearchTimeout = window.setTimeout(() => {
+    latestAddCardSearchRequest += 1
+    void searchAddCardSuggestions(query, latestAddCardSearchRequest)
+  }, 250)
 })
 </script>
 
@@ -212,9 +526,22 @@ watch(filterText, () => {
         <CollectionHeader
           :collection="collection"
           :show-commander-builder-action="showCommanderBuilderAction"
+          :show-master-search-action="showMasterSearchAction"
           @create-commander-deck="goToCommanderBuilder"
+          @search-master-collection="goToMasterAdvancedSearch"
         />
-        <CollectionToolbar v-model="viewMode" v-model:filter-text="filterText" :collection="collection" />
+        <CollectionToolbar
+          v-model="viewMode"
+          v-model:organization-mode="organizationMode"
+          v-model:filter-text="filterText"
+          v-model:add-card-query="addCardQuery"
+          :collection="collection"
+          :add-card-suggestions="addCardSuggestions"
+          :add-card-loading="isSearchingCards"
+          :add-card-disabled="isAddingCard || isReadOnlyCollection"
+          @select-add-card-suggestion="addSuggestedCard"
+          @dismiss-add-card-suggestions="dismissAddCardSuggestions"
+        />
         <CollectionManaCurve v-if="shouldShowManaCurve" :collection="collection" />
 
         <div v-if="filteredCollection.items.length === 0" class="state-panel">
@@ -227,7 +554,13 @@ watch(filterText, () => {
             :is="workspaceComponent"
             :collection="filteredCollection"
             :view-mode="viewMode"
+            :organization-mode="organizationMode"
+            :mutating-item-ids="mutatingItemIds"
+            :show-quantity-actions="!isReadOnlyCollection"
             @hover-item="handleHoverItem"
+            @context-menu="handleContextMenu"
+            @increment-item="mutateItemQuantity($event, 'increment')"
+            @decrement-item="mutateItemQuantity($event, 'decrement')"
           />
           <CollectionHoverPreview :item="hoveredItem" />
         </div>
@@ -237,7 +570,29 @@ watch(filterText, () => {
           v-else
           :collection="filteredCollection"
           :view-mode="viewMode"
+          :organization-mode="organizationMode"
+          :mutating-item-ids="mutatingItemIds"
+          :show-quantity-actions="!isReadOnlyCollection"
+          @context-menu="handleContextMenu"
+          @increment-item="mutateItemQuantity($event, 'increment')"
+          @decrement-item="mutateItemQuantity($event, 'decrement')"
         />
+
+        <div
+          v-if="contextMenuState"
+          class="context-menu"
+          :style="{ left: `${contextMenuState.x}px`, top: `${contextMenuState.y}px` }"
+          @click.stop
+        >
+          <button
+            class="context-menu-action"
+            type="button"
+            :disabled="!contextMenuState.item.oracle_id"
+            @click="openCardDetails"
+          >
+            Show card details
+          </button>
+        </div>
       </template>
     </section>
   </div>
@@ -260,6 +615,41 @@ watch(filterText, () => {
   grid-template-columns: minmax(0, 1fr) 320px;
   gap: 18px;
   align-items: start;
+}
+
+.context-menu {
+  position: fixed;
+  z-index: 1000;
+  min-width: 190px;
+  padding: 8px;
+  border-radius: 14px;
+  border: 1px solid var(--surface-border-light);
+  background: rgba(15, 23, 42, 0.98);
+  box-shadow: var(--shadow-lg);
+}
+
+.context-menu-action {
+  width: 100%;
+  padding: 10px 12px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-main);
+  font-family: var(--font-sans);
+  font-size: 0.92rem;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+}
+
+.context-menu-action:hover:not(:disabled) {
+  background: var(--accent-electric-dim);
+  color: var(--accent-electric);
+}
+
+.context-menu-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 
 .nav-row {

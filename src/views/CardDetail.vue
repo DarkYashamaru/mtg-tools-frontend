@@ -98,6 +98,8 @@ const hasClassificationMetadata = computed(() =>
   !!card.value && (card.value.categories.length > 0 || card.value.archetypes.length > 0)
 )
 
+const hasMarkerMetadata = computed(() => !!card.value?.markers?.length)
+
 function goBack() {
   if (window.history.length > 1) {
     router.back()
@@ -251,6 +253,21 @@ onMounted(() => {
 
         <div class="metadata-section">
           <h2>Data Engine Tags</h2>
+
+          <div v-if="hasMarkerMetadata" class="tag-group">
+            <h3>Markers</h3>
+            <div class="tags-flex">
+              <router-link
+                v-for="marker in card.markers"
+                :key="marker.id"
+                :to="{ name: 'search-results', query: { markers: marker.name } }"
+                class="tag-pill direct"
+                :title="marker.description || 'No detailed description'"
+              >
+                {{ marker.name }}
+              </router-link>
+            </div>
+          </div>
           
           <div v-if="card.tags?.direct?.length" class="tag-group">
             <h3>Direct Attributes</h3>

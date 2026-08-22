@@ -22,6 +22,12 @@ export interface GameplayCardTags {
   inherited: GameplayCardTag[]
 }
 
+export interface GameplayCardMarker {
+  id: string
+  name: string
+  description?: string | null
+}
+
 export interface GameplayCardTheme {
   theme_id: number
   name: string
@@ -45,10 +51,26 @@ export interface GameplayCard {
   commander_legal: boolean
   standard_legal: boolean
   tags: GameplayCardTags
+  markers: GameplayCardMarker[]
   faces: GameplayCardFace[]
   keywords: Array<{ label: string }>
   color_identity: Array<{ symbol: string }>
   themes: GameplayCardTheme[]
   categories: GameplayCardCategory[]
   archetypes: GameplayCardArchetype[]
+  owned_amount?: number
+  owned_print_count?: number
+  owned_collection_count?: number
+  ownership_sources?: Array<{
+    collection_id: number
+    collection_name: string
+    item_id: number
+    card_id: string
+    set_code: string | null
+    collector_number: string | null
+    lang: string | null
+    image_uri: string | null
+    amount: number
+    zone: string
+  }>
 }

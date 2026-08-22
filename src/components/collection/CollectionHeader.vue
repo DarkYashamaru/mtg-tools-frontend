@@ -1,24 +1,55 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import type { CollectionRecord } from './types'
 
 interface Props {
   collection: CollectionRecord
   showCommanderBuilderAction?: boolean
+  showMasterSearchAction?: boolean
 }
 
-withDefaults(defineProps<Props>(), {
+const props = withDefaults(defineProps<Props>(), {
   showCommanderBuilderAction: false,
+  showMasterSearchAction: false,
 })
 defineEmits<{
   createCommanderDeck: []
+  searchMasterCollection: []
 }>()
 
+const commanderCards = computed(() => props.collection.commander_cards ?? [])
+const commanderLabel = computed(() => {
+  if (commanderCards.value.length > 0) {
+    const names = commanderCards.value
+      .map((card) => card.name?.trim())
+      .filter((name): name is string => !!name)
+
+    return names.length > 0 ? names.join(' + ') : null
+  }
+
+  return props.collection.commander_name
+})
+
+const commanderHeroImage = computed(() => {
+  if (commanderCards.value.length > 0) {
+    return commanderCards.value[0]?.image_uri ?? props.collection.commander_image_uri
+  }
+
+  return props.collection.commander_image_uri
+})
+
 function collectionSubtitle(collection: CollectionRecord) {
+  if (collection.is_virtual) {
+    const sourceCount = collection.source_collection_count ?? 0
+    const label = sourceCount === 1 ? '1 collection' : `${sourceCount} collections`
+    return `Read-only aggregate across ${label}`
+  }
+
   const deckType = collection.deck_type.toLowerCase()
 
   if (deckType === 'commander') {
-    return collection.commander_name
-      ? `Commander: ${collection.commander_name}`
+    return commanderLabel.value
+      ? `Commander: ${commanderLabel.value}`
       : 'Commander deck'
   }
 
@@ -34,13 +65,13 @@ function collectionSubtitle(collection: CollectionRecord) {
   <header
     class="collection-header"
     :class="{
-      'has-art': !!collection.commander_image_uri && collection.deck_type.toLowerCase() === 'commander',
+      'has-art': !!commanderHeroImage && collection.deck_type.toLowerCase() === 'commander',
     }"
   >
     <img
-      v-if="collection.commander_image_uri && collection.deck_type.toLowerCase() === 'commander'"
-      :src="collection.commander_image_uri"
-      :alt="collection.commander_name || collection.name"
+      v-if="commanderHeroImage && collection.deck_type.toLowerCase() === 'commander'"
+      :src="commanderHeroImage"
+      :alt="commanderLabel || collection.name"
       class="header-art"
       loading="lazy"
     >
@@ -54,12 +85,16 @@ function collectionSubtitle(collection: CollectionRecord) {
 
       <div class="meta-row">
         <span class="meta-pill">{{ collection.item_count }} cards</span>
-        <span v-if="collection.commander_name" class="meta-pill commander-pill">{{ collection.commander_name }}</span>
+        <span v-if="collection.is_read_only" class="meta-pill">Read-only</span>
+        <span v-if="commanderLabel" class="meta-pill commander-pill">{{ commanderLabel }}</span>
       </div>
 
-      <div v-if="showCommanderBuilderAction" class="action-row">
-        <button class="primary-action" type="button" @click="$emit('createCommanderDeck')">
+      <div v-if="showCommanderBuilderAction || showMasterSearchAction" class="action-row">
+        <button v-if="showCommanderBuilderAction" class="primary-action" type="button" @click="$emit('createCommanderDeck')">
           Create commander deck from collection
+        </button>
+        <button v-if="showMasterSearchAction" class="secondary-action" type="button" @click="$emit('searchMasterCollection')">
+          Advanced search this pool
         </button>
       </div>
     </div>
@@ -137,6 +172,9 @@ h1 {
 }
 
 .action-row {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
   margin-top: 18px;
 }
 
@@ -161,6 +199,18 @@ h1 {
   border-radius: 14px;
   background: var(--accent-electric);
   color: #07121a;
+  font-family: var(--font-sans);
+  font-size: 0.95rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.secondary-action {
+  padding: 12px 16px;
+  border: 1px solid var(--surface-border-light);
+  border-radius: 14px;
+  background: rgba(15, 23, 42, 0.72);
+  color: var(--text-light);
   font-family: var(--font-sans);
   font-size: 0.95rem;
   font-weight: 800;

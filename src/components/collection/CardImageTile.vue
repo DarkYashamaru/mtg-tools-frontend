@@ -1,30 +1,104 @@
 <script setup lang="ts">
-import type { CollectionItem } from './types'
+import type { CollectionCardContextMenuPayload, CollectionItem } from './types'
 import CardFaceViewer from '@/components/cards/CardFaceViewer.vue'
 
 interface Props {
   item: CollectionItem
+  hideSingletonAmount?: boolean
+  isMutating?: boolean
+  showQuantityActions?: boolean
+  primaryActionLabel?: string
+  primaryActionDisabled?: boolean
 }
 
-defineProps<Props>()
+const props = withDefaults(defineProps<Props>(), {
+  hideSingletonAmount: false,
+  isMutating: false,
+  showQuantityActions: true,
+  primaryActionLabel: '',
+  primaryActionDisabled: false,
+})
+const emit = defineEmits<{
+  contextMenu: [payload: CollectionCardContextMenuPayload]
+  incrementItem: [item: CollectionItem]
+  decrementItem: [item: CollectionItem]
+  cardClick: [item: CollectionItem]
+  primaryAction: [item: CollectionItem]
+}>()
+
+function shouldShowQuantity() {
+  return !(props.hideSingletonAmount && props.item.amount === 1)
+}
+
+function openContextMenu(event: MouseEvent) {
+  emit('contextMenu', {
+    item: props.item,
+    x: event.clientX,
+    y: event.clientY,
+  })
+}
+
+function incrementItem() {
+  emit('incrementItem', props.item)
+}
+
+function decrementItem() {
+  emit('decrementItem', props.item)
+}
+
+function handleCardClick() {
+  emit('cardClick', props.item)
+}
+
+function triggerPrimaryAction() {
+  emit('primaryAction', props.item)
+}
 </script>
 
 <template>
-  <article class="card-tile">
+  <article class="card-tile" @click="handleCardClick" @contextmenu.prevent="openContextMenu">
     <div class="card-media">
       <CardFaceViewer
-        :preview-image-url="item.image_uri"
-        :fallback-name="item.name"
+        :preview-image-url="props.item.image_uri"
+        :fallback-name="props.item.name"
         image-size="normal"
         :compact-fallback="true"
       />
 
-      <span class="quantity-chip">{{ item.amount }}x</span>
+      <span v-if="shouldShowQuantity()" class="quantity-chip">{{ props.item.amount }}x</span>
     </div>
 
     <div class="card-copy">
-      <strong>{{ item.name || 'Unknown Card' }}</strong>
-      <p>{{ item.set_code }} · {{ item.collector_number }}</p>
+      <strong>{{ props.item.name || 'Unknown Card' }}</strong>
+      <p>{{ props.item.set_code }} · {{ props.item.collector_number }}</p>
+      <div v-if="props.showQuantityActions" class="quantity-actions">
+        <button
+          class="quantity-button"
+          type="button"
+          :disabled="props.isMutating"
+          @click.stop="decrementItem"
+        >
+          -
+        </button>
+        <button
+          class="quantity-button"
+          type="button"
+          :disabled="props.isMutating"
+          @click.stop="incrementItem"
+        >
+          +
+        </button>
+      </div>
+
+      <button
+        v-if="props.primaryActionLabel"
+        class="primary-action-button"
+        type="button"
+        :disabled="props.primaryActionDisabled"
+        @click.stop="triggerPrimaryAction"
+      >
+        {{ props.primaryActionLabel }}
+      </button>
     </div>
   </article>
 </template>
@@ -73,5 +147,48 @@ defineProps<Props>()
   margin: 4px 0 0;
   color: var(--text-muted);
   font-size: 0.84rem;
+}
+
+.quantity-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.quantity-button {
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--surface-border-light);
+  border-radius: 10px;
+  background: var(--surface-hover);
+  color: var(--text-main);
+  font-family: var(--font-sans);
+  font-size: 1rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.quantity-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.primary-action-button {
+  width: 100%;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: none;
+  border-radius: 10px;
+  background: var(--accent-electric);
+  color: #07121a;
+  font-family: var(--font-sans);
+  font-size: 0.88rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.primary-action-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
 }
 </style>

@@ -1,11 +1,16 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
+import { storeToRefs } from 'pinia'
 import type { LocationQueryValue } from 'vue-router'
 import CardFaceViewer from '@/components/cards/CardFaceViewer.vue'
+import { useAuthStore } from '@/stores/authStore'
 import type { GameplayCard } from '@/types/gameplayCard'
 
 const route = useRoute()
+const router = useRouter()
+const authStore = useAuthStore()
+const { authHeaders } = storeToRefs(authStore)
 const loading = ref(false)
 const error = ref<string | null>(null)
 const results = ref<GameplayCard[]>([])
@@ -54,15 +59,34 @@ async function executeSearchFetch() {
     appendValue(params, 'exclude_oracle_text', q.exclude_oracle_text)
     appendValue(params, 'tags', q.tags)
     appendValue(params, 'exclude_tags', q.exclude_tags)
+    appendValue(params, 'markers', q.markers)
+    appendValue(params, 'exclude_markers', q.exclude_markers)
 
     if (q.exact_colors === 'true') params.append('exact_colors', 'true')
+    if (q.colorless === 'true') params.append('colorless', 'true')
 
     appendValue(params, 'colors', q.colors)
+    const isMasterScope = q.scope === 'master'
+    const endpoint = isMasterScope
+      ? `/api/collections/master/search?${params.toString()}`
+      : `/api/advanced?${params.toString()}`
+    const response = await fetch(endpoint, {
+      headers: isMasterScope ? { ...authHeaders.value } : undefined,
+    })
 
-    const response = await fetch(`/api/advanced?${params.toString()}`)
+    if (response.status === 401 && isMasterScope) {
+      authStore.logout()
+      router.replace({
+        name: 'login',
+        query: { redirect: route.fullPath },
+      })
+      return
+    }
+
+    const payload = await response.json()
     if (!response.ok) throw new Error(`HTTP Error Status: ${response.status}`)
 
-    results.value = await response.json()
+    results.value = isMasterScope ? payload.results ?? [] : payload
   } catch (err: any) {
     console.error('SEARCH ERROR:', err)
     error.value = 'Failed to load card results matching current parameter configuration.'
@@ -86,7 +110,7 @@ watch(
   <div class="results-container">
     <header class="results-header">
       <div class="nav-context">
-        <router-link :to="{ name: 'advanced-search' }" class="back-link">
+        <router-link :to="{ name: 'advanced-search', query: route.query.scope === 'master' ? { scope: 'master' } : {} }" class="back-link">
         ← Adjust Search Fields
         </router-link>
         <h1>Engine Search Results</h1>
@@ -133,6 +157,10 @@ watch(
         <div class="card-info">
           <h3>{{ card.name }}</h3>
           <span class="cmc-badge">CMC {{ card.cmc }}</span>
+          <div v-if="card.owned_amount" class="ownership-pills">
+            <span class="metadata-pill ownership">Owned {{ card.owned_amount }}x</span>
+            <span class="metadata-pill ownership">Across {{ card.owned_collection_count }} collections</span>
+          </div>
           <div v-if="card.categories.length || card.archetypes.length" class="metadata-pills">
             <span
               v-for="category in card.categories"
@@ -157,6 +185,7 @@ watch(
 
 <style scoped src="./SearchResults.css"></style>
 <style scoped>
+.ownership-pills,
 .metadata-pills {
   display: flex;
   flex-wrap: wrap;
@@ -183,5 +212,10 @@ watch(
 
 .metadata-pill.archetype {
   background: rgba(148, 163, 184, 0.12);
+}
+
+.metadata-pill.ownership {
+  background: rgba(16, 185, 129, 0.12);
+  border-color: rgba(16, 185, 129, 0.28);
 }
 </style>

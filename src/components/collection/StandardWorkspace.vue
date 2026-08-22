@@ -1,20 +1,33 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import DeckSection from './DeckSection.vue'
-import type { CollectionItem, CollectionRecord, WorkspaceViewMode } from './types'
+import type {
+  CollectionCardContextMenuPayload,
+  CollectionItem,
+  CollectionRecord,
+  WorkspaceOrganizationMode,
+  WorkspaceViewMode,
+} from './types'
 
 interface Props {
   collection: CollectionRecord
   viewMode: WorkspaceViewMode
+  organizationMode: WorkspaceOrganizationMode
+  mutatingItemIds: Array<string | number>
+  showQuantityActions?: boolean
 }
 
 const props = defineProps<Props>()
 const emit = defineEmits<{
   hoverItem: [item: CollectionItem | null]
+  contextMenu: [payload: CollectionCardContextMenuPayload]
+  incrementItem: [item: CollectionItem]
+  decrementItem: [item: CollectionItem]
 }>()
 
 const mainboardItems = computed(() => props.collection.items.filter((item) => item.zone !== 'sideboard'))
 const sideboardItems = computed(() => props.collection.items.filter((item) => item.zone === 'sideboard'))
+const hasSideboard = computed(() => sideboardItems.value.length > 0)
 </script>
 
 <template>
@@ -23,15 +36,26 @@ const sideboardItems = computed(() => props.collection.items.filter((item) => it
       title="Main Deck"
       :items="mainboardItems"
       :view-mode="viewMode"
-      :group-by-category="true"
+      :organization-mode="organizationMode"
+      :mutating-item-ids="mutatingItemIds"
+      :show-quantity-actions="showQuantityActions"
       @hover-item="emit('hoverItem', $event)"
+      @context-menu="emit('contextMenu', $event)"
+      @increment-item="emit('incrementItem', $event)"
+      @decrement-item="emit('decrementItem', $event)"
     />
     <DeckSection
+      v-if="hasSideboard"
       title="Sideboard"
       :items="sideboardItems"
       :view-mode="viewMode"
-      :group-by-category="true"
+      :organization-mode="organizationMode"
+      :mutating-item-ids="mutatingItemIds"
+      :show-quantity-actions="showQuantityActions"
       @hover-item="emit('hoverItem', $event)"
+      @context-menu="emit('contextMenu', $event)"
+      @increment-item="emit('incrementItem', $event)"
+      @decrement-item="emit('decrementItem', $event)"
     />
   </div>
 </template>

@@ -3,14 +3,19 @@ import { computed, onMounted, ref } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { useAuthStore } from '@/stores/authStore'
+import type { CollectionCommanderCard } from '@/components/collection/types'
 
 type CollectionSummary = {
-  id: number
+  id: string | number
   name: string
   deck_type: string
+  commander_cards?: CollectionCommanderCard[]
   commander_name: string | null
   commander_image_uri: string | null
   item_count: number
+  is_virtual?: boolean
+  is_read_only?: boolean
+  source_collection_count?: number
 }
 
 const router = useRouter()
@@ -22,8 +27,8 @@ const { authHeaders, user } = storeToRefs(authStore)
 const isLoading = ref(true)
 const errorMessage = ref('')
 const collections = ref<CollectionSummary[]>([])
-const pendingDeleteCollectionId = ref<number | null>(null)
-const deletingCollectionId = ref<number | null>(null)
+const pendingDeleteCollectionId = ref<string | number | null>(null)
+const deletingCollectionId = ref<string | number | null>(null)
 
 const collectionPendingDelete = computed(() => (
   collections.value.find((collection) => collection.id === pendingDeleteCollectionId.value) ?? null
@@ -72,7 +77,7 @@ function openCreateCollection() {
   router.push({ name: 'new-collection' })
 }
 
-function openCollection(collectionId: number) {
+function openCollection(collectionId: string | number) {
   router.push(`/tools/bulk-deck-builder/collections/${collectionId}`)
 }
 
@@ -80,12 +85,38 @@ function isCommanderCollection(collection: CollectionSummary) {
   return collection.deck_type.toLowerCase() === 'commander'
 }
 
+function commanderLabel(collection: CollectionSummary) {
+  if (Array.isArray(collection.commander_cards) && collection.commander_cards.length > 0) {
+    const names = collection.commander_cards
+      .map((card) => card.name?.trim())
+      .filter((name): name is string => !!name)
+
+    return names.length > 0 ? names.join(' + ') : null
+  }
+
+  return collection.commander_name
+}
+
+function commanderImage(collection: CollectionSummary) {
+  if (Array.isArray(collection.commander_cards) && collection.commander_cards.length > 0) {
+    return collection.commander_cards[0]?.image_uri ?? collection.commander_image_uri
+  }
+
+  return collection.commander_image_uri
+}
+
 function collectionSubtitle(collection: CollectionSummary) {
+  if (collection.is_virtual) {
+    const sourceCount = collection.source_collection_count ?? 0
+    const label = sourceCount === 1 ? '1 collection' : `${sourceCount} collections`
+    return `Read-only aggregate across ${label}.`
+  }
+
   const deckType = collection.deck_type.toLowerCase()
 
   if (deckType === 'commander') {
-    return collection.commander_name
-      ? `Commander: ${collection.commander_name}`
+    return commanderLabel(collection)
+      ? `Commander: ${commanderLabel(collection)}`
       : 'Commander deck imported without an assigned commander.'
   }
 
@@ -96,7 +127,7 @@ function collectionSubtitle(collection: CollectionSummary) {
   return 'Binder collection.'
 }
 
-function promptDeleteCollection(collectionId: number) {
+function promptDeleteCollection(collectionId: string | number) {
   pendingDeleteCollectionId.value = collectionId
   errorMessage.value = ''
 }
@@ -106,7 +137,7 @@ function cancelDeleteCollection() {
 }
 
 async function confirmDeleteCollection() {
-  if (pendingDeleteCollectionId.value === null) {
+  if (pendingDeleteCollectionId.value === null || typeof pendingDeleteCollectionId.value !== 'number') {
     return
   }
 
@@ -158,7 +189,7 @@ onMounted(() => {
           <span class="eyebrow">Deck Dashboard</span>
           <h1>{{ usernameLabel() }} collection workspace</h1>
           <p class="description">
-            Choose an existing collection or start a new one. The master collection entry is visible here, but remains disabled for now.
+            Choose an existing collection or start a new one. The master collection appears alongside your saved collections as a shared read-only pool.
           </p>
         </div>
 
@@ -196,13 +227,6 @@ onMounted(() => {
       </section>
 
       <section class="dashboard-grid">
-        <button class="collection-card master-card" type="button" disabled>
-          <span class="card-kicker">System Slot</span>
-          <h2>Master Collection</h2>
-          <p>Shared pool access will be enabled in a later pass.</p>
-          <span class="card-meta">Disabled</span>
-        </button>
-
         <div v-if="isLoading" class="loading-grid">
           <div v-for="item in 4" :key="item" class="collection-card skeleton-card skeleton-pulse"></div>
         </div>
@@ -214,6 +238,7 @@ onMounted(() => {
             class="collection-card"
           >
             <button
+              v-if="!collection.is_read_only"
               class="card-delete-button"
               type="button"
               :disabled="deletingCollectionId === collection.id"
@@ -227,10 +252,10 @@ onMounted(() => {
               type="button"
               @click="openCollection(collection.id)"
             >
-              <div v-if="isCommanderCollection(collection) && collection.commander_image_uri" class="commander-thumb-wrap">
+              <div v-if="isCommanderCollection(collection) && commanderImage(collection)" class="commander-thumb-wrap">
                 <img
-                  :src="collection.commander_image_uri"
-                  :alt="collection.commander_name || collection.name"
+                  :src="commanderImage(collection) || undefined"
+                  :alt="commanderLabel(collection) || collection.name"
                   class="commander-thumb"
                   loading="lazy"
                 >
@@ -239,7 +264,9 @@ onMounted(() => {
               <span class="card-kicker">{{ collection.deck_type }}</span>
               <h2>{{ collection.name }}</h2>
               <p>{{ collectionSubtitle(collection) }}</p>
-              <span class="card-meta">{{ collection.item_count }} cards tracked</span>
+              <span class="card-meta">
+                {{ collection.item_count }} cards tracked{{ collection.is_read_only ? ' · Read-only' : '' }}
+              </span>
             </button>
           </article>
 
