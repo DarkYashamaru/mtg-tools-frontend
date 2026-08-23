@@ -71,6 +71,17 @@ function triggerPrimaryAction() {
     <div class="card-copy">
       <strong>{{ props.item.name || 'Unknown Card' }}</strong>
       <p>{{ props.item.set_code }} · {{ props.item.collector_number }}</p>
+      <div
+        v-if="props.item.commander_support_score !== undefined || (props.item.commander_support_reasons?.length ?? 0) > 0"
+        class="commander-support-box"
+      >
+        <div v-if="props.item.commander_support_score !== undefined" class="commander-support-score">
+          Commander Score: <strong>{{ props.item.commander_support_score }}</strong>
+        </div>
+        <p v-if="props.item.commander_support_reasons?.length" class="commander-support-reasons">
+          {{ props.item.commander_support_reasons.map((reason) => `${reason.label} (${reason.points > 0 ? '+' : ''}${reason.points})`).join(' · ') }}
+        </p>
+      </div>
       <div v-if="props.showQuantityActions" class="quantity-actions">
         <button
           class="quantity-button"
@@ -106,11 +117,16 @@ function triggerPrimaryAction() {
 <style scoped>
 .card-tile {
   display: grid;
+  grid-template-rows: auto min-content;
+  align-self: start;
+  align-content: start;
   gap: 12px;
 }
 
 .card-media {
   position: relative;
+  width: 100%;
+  aspect-ratio: 0.71 / 1;
   overflow: hidden;
   border-radius: 16px;
   border: 1px solid var(--surface-border-light);
@@ -118,11 +134,16 @@ function triggerPrimaryAction() {
   box-shadow: var(--shadow-md);
 }
 
-.card-media :deep(img),
+.card-media :deep(.face-viewer),
+.card-media :deep(.face-image),
 .card-media :deep(.face-fallback) {
   display: block;
   width: 100%;
-  aspect-ratio: 0.71 / 1;
+  height: 100%;
+}
+
+.card-media :deep(.face-image) {
+  object-fit: contain !important;
 }
 
 .quantity-chip {
@@ -147,6 +168,31 @@ function triggerPrimaryAction() {
   margin: 4px 0 0;
   color: var(--text-muted);
   font-size: 0.84rem;
+}
+
+.commander-support-box {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(125, 211, 252, 0.18);
+  background: rgba(8, 12, 20, 0.76);
+}
+
+.commander-support-score {
+  color: var(--text-main);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.commander-support-score strong {
+  color: var(--accent-electric);
+}
+
+.commander-support-reasons {
+  margin: 6px 0 0;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  line-height: 1.5;
 }
 
 .quantity-actions {

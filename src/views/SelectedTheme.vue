@@ -4,21 +4,44 @@ import { useRoute, useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import CommanderHero from '@/components/CommanderHero.vue'
 import DeckSection from '@/components/collection/DeckSection.vue'
+import { createCustomTheme, isCustomThemeId } from '@/constants/commanderThemes'
 import { useAuthStore } from '@/stores/authStore'
 import { useCollectionStore } from '@/stores/collectionStore'
 import { loadSavedCollectionGameplay } from '@/composables/useSavedCollectionGameplay'
 import type { CollectionItem } from '@/components/collection/types'
+import type { CommanderSupportEntry, CommanderSupportResponse } from '@/types/commanderSupport'
 import type { Card, CardThemeResponse } from '@/utils/deckScorer'
+import { getBestCardImage } from '@/components/cards/cardDisplay'
 
 type OverviewBucket = {
   key: string
   title: string
   description: string
-  tagSlug: string
+  matchType: 'tag' | 'category'
+  matchValue: string
 }
 
 type CardOverviewGroup = OverviewBucket & {
   cards: Card[]
+  items: CollectionItem[]
+}
+
+type CardPool = 'collection' | 'all'
+
+type OverviewCardEntry = {
+  card: Card
+  score: number
+  reasons: CollectionItem['commander_support_reasons']
+  owned: boolean
+}
+
+type CardTileSource = Pick<CollectionItem, 'card_id' | 'image_uri' | 'zone'>
+
+type CommanderSupportGroup = {
+  key: string
+  title: string
+  description: string
+  entries: CommanderSupportEntry[]
   items: CollectionItem[]
 }
 
@@ -27,25 +50,29 @@ const OVERVIEW_BUCKETS: OverviewBucket[] = [
     key: 'ramp',
     title: 'Ramp',
     description: 'Cards tagged to accelerate mana and push the deck ahead on resources.',
-    tagSlug: 'ramp',
+    matchType: 'tag',
+    matchValue: 'ramp',
   },
   {
-    key: 'card-advantage',
-    title: 'Card Advantage',
-    description: 'Cards tagged to generate extra cards, selection, or sustained advantage.',
-    tagSlug: 'card-advantage',
+    key: 'draw',
+    title: 'Draw',
+    description: 'Cards categorized as draw tools to keep cards flowing.',
+    matchType: 'category',
+    matchValue: 'draw',
   },
   {
     key: 'spot-removal',
     title: 'Spot Removal',
     description: 'Cards tagged to answer a single threat efficiently.',
-    tagSlug: 'spot-removal',
+    matchType: 'tag',
+    matchValue: 'spot-removal',
   },
   {
     key: 'sweeper',
     title: 'Board Wipe',
     description: 'Cards tagged to reset the board or clear multiple permanents.',
-    tagSlug: 'sweeper',
+    matchType: 'tag',
+    matchValue: 'sweeper',
   },
 ]
 
@@ -58,6 +85,20 @@ const { authHeaders } = storeToRefs(authStore)
 const activeCommander = ref<Card | null>(null)
 const activeTheme = ref<CardThemeResponse | null>(null)
 const collectionCards = ref<Card[]>([])
+const collectionTileSourcesByOracleId = ref<Record<string, CollectionItem>>({})
+const allCards = ref<Card[]>([])
+const allCardScores = ref<Record<string, number>>({})
+const allCardReasons = ref<Record<string, NonNullable<CollectionItem['commander_support_reasons']>>>({})
+const allCandidateTotal = ref(0)
+const collectionCommanderSupport = ref<CommanderSupportResponse | null>(null)
+const allCommanderSupport = ref<CommanderSupportResponse | null>(null)
+const selectedCardPool = ref<CardPool>('collection')
+const hasLoadedAllCards = ref(false)
+const isLoadingAllCards = ref(false)
+const allCardsError = ref('')
+const commanderSupport = computed(() => (
+  selectedCardPool.value === 'all' ? allCommanderSupport.value : collectionCommanderSupport.value
+))
 const isLoading = ref(true)
 const isStartingBuilder = ref(false)
 const errorMessage = ref('')
@@ -82,6 +123,10 @@ const activeThemeId = computed(() => {
   return Number.isFinite(parsed) ? parsed : null
 })
 
+const activePoolCards = computed(() => (
+  selectedCardPool.value === 'collection' ? collectionCards.value : allCards.value
+))
+
 const colorLegalCards = computed(() => {
   if (!activeCommander.value) {
     return []
@@ -89,27 +134,57 @@ const colorLegalCards = computed(() => {
 
   const commanderColors = new Set(activeCommander.value.color_identity.map((color) => color.symbol.toUpperCase()))
 
-  return collectionCards.value
+  return activePoolCards.value
     .filter((card) => card.oracle_id !== activeCommander.value?.oracle_id)
     .filter((card) => card.color_identity.every((color) => commanderColors.has(color.symbol.toUpperCase())))
-    .sort((left, right) => {
-      const cmcDifference = (left.cmc ?? 0) - (right.cmc ?? 0)
-      if (cmcDifference !== 0) {
-        return cmcDifference
-      }
-
-      return left.name.localeCompare(right.name)
-    })
 })
 
+const selectedPoolLabel = computed(() => (
+  selectedCardPool.value === 'collection' ? 'My Collection' : 'All Cards'
+))
+
+const poolDescription = computed(() => (
+  selectedCardPool.value === 'collection'
+    ? 'This view surfaces color-legal cards from your collection that match the core deck-building roles we care about next: ramp, card advantage, spot removal, and board wipes.'
+    : 'This view surfaces every color-legal Commander card, so you can compare upgrades outside your current collection using the same role groups and ordering.'
+))
+
+function commanderCardScore(card: Card): number {
+  if (selectedCardPool.value === 'all') {
+    return allCardScores.value[card.oracle_id] ?? 0
+  }
+
+  return commanderSupport.value?.card_scores?.[card.oracle_id] ?? 0
+}
+
+function sortCardsForOverview(cards: Card[]): Card[] {
+  return [...cards].sort((left, right) => {
+    const scoreDifference = commanderCardScore(right) - commanderCardScore(left)
+    if (scoreDifference !== 0) {
+      return scoreDifference
+    }
+
+    const cmcDifference = (left.cmc ?? 0) - (right.cmc ?? 0)
+    if (cmcDifference !== 0) {
+      return cmcDifference
+    }
+
+    return left.name.localeCompare(right.name)
+  })
+}
+
 const overviewGroups = computed<CardOverviewGroup[]>(() => (
-  OVERVIEW_BUCKETS.map((bucket) => ({
-    ...bucket,
-    cards: colorLegalCards.value.filter((card) => getCardTags(card).has(bucket.tagSlug)),
-    items: colorLegalCards.value
-      .filter((card) => getCardTags(card).has(bucket.tagSlug))
-      .map((card, index) => toCollectionItem(card, bucket.key, index)),
-  }))
+  OVERVIEW_BUCKETS.map((bucket) => {
+    const matchingCards = sortCardsForOverview(
+      colorLegalCards.value.filter((card) => matchesOverviewBucket(card, bucket))
+    )
+
+    return {
+      ...bucket,
+      cards: matchingCards,
+      items: matchingCards.map((card) => toCollectionItem(card, bucket.key)),
+    }
+  })
 ))
 
 const matchedCardTotal = computed(() => {
@@ -124,6 +199,48 @@ const matchedCardTotal = computed(() => {
   return uniqueCards.size
 })
 
+const commanderSupportGroups = computed<CommanderSupportGroup[]>(() => {
+  if (!commanderSupport.value?.supported) {
+    return []
+  }
+
+  return (commanderSupport.value.bucket_metadata ?? [])
+    .map((bucket) => {
+      const entries = commanderSupport.value?.buckets?.[bucket.key] ?? []
+
+      return {
+        key: bucket.key,
+        title: bucket.title,
+        description: bucket.description,
+        entries,
+        items: entries.map((entry, index) => commanderSupportEntryToCollectionItem(entry, index)),
+      }
+    })
+    .filter((group) => group.entries.length > 0)
+})
+
+const commanderSupportCardTotal = computed(() => (
+  commanderSupportGroups.value.reduce((sum, group) => sum + group.entries.length, 0)
+))
+
+const commanderRecommendationByOracleId = computed(() => {
+  const map = new Map<string, CommanderSupportEntry>()
+
+  if (!commanderSupport.value?.supported) {
+    return map
+  }
+
+  for (const entries of Object.values(commanderSupport.value.buckets ?? {})) {
+    for (const entry of entries) {
+      if (!map.has(entry.oracle_id)) {
+        map.set(entry.oracle_id, entry)
+      }
+    }
+  }
+
+  return map
+})
+
 async function loadSelectedThemePage() {
   if (!activeCollectionId.value || !activeCommanderId.value || activeThemeId.value === null) {
     errorMessage.value = 'Missing collection, commander, or theme identifier.'
@@ -135,7 +252,7 @@ async function loadSelectedThemePage() {
   errorMessage.value = ''
 
   try {
-    const { cards } = await loadSavedCollectionGameplay({
+    const { collection, cards } = await loadSavedCollectionGameplay({
       collectionId: activeCollectionId.value,
       authHeaders,
       routePath: route.fullPath,
@@ -143,6 +260,11 @@ async function loadSelectedThemePage() {
     })
 
     collectionCards.value = cards
+    collectionTileSourcesByOracleId.value = Object.fromEntries(
+      collection.items
+        .filter((item): item is CollectionItem & { oracle_id: string } => Boolean(item.oracle_id))
+        .map((item) => [item.oracle_id, item]),
+    )
     store.setCollection(cards)
     store.selectCommander(activeCommanderId.value)
 
@@ -151,26 +273,121 @@ async function loadSelectedThemePage() {
       throw new Error('The selected commander is not present in this collection.')
     }
 
-    const response = await fetch(`/api/themes/by-commander/${activeCommanderId.value}`)
-    if (!response.ok) {
-      throw new Error('Failed to pull commander theme profiles.')
-    }
+    if (isCustomThemeId(activeThemeId.value)) {
+      activeTheme.value = createCustomTheme()
+    } else {
+      const response = await fetch(`/api/themes/by-commander/${activeCommanderId.value}`)
+      if (!response.ok) {
+        throw new Error('Failed to pull commander theme profiles.')
+      }
 
-    const themes = await response.json()
-    activeTheme.value = Array.isArray(themes)
-      ? themes.find((theme) => Number(theme.theme_id) === activeThemeId.value) ?? null
-      : null
+      const themes = await response.json()
+      activeTheme.value = Array.isArray(themes)
+        ? themes.find((theme) => Number(theme.theme_id) === activeThemeId.value) ?? null
+        : null
+    }
 
     if (!activeTheme.value) {
       throw new Error('The selected theme was not found for this commander.')
     }
 
     store.setSelectedTheme(activeTheme.value)
+    await loadCommanderSupport()
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : 'Unable to load selected theme.'
   } finally {
     isLoading.value = false
   }
+}
+
+async function selectCardPool(pool: CardPool) {
+  if (pool === 'collection') {
+    selectedCardPool.value = pool
+    allCardsError.value = ''
+    return
+  }
+
+  if (hasLoadedAllCards.value) {
+    selectedCardPool.value = pool
+    return
+  }
+
+  if (!activeCommander.value || isLoadingAllCards.value) {
+    return
+  }
+
+  selectedCardPool.value = pool
+  isLoadingAllCards.value = true
+  allCardsError.value = ''
+
+  try {
+    const response = await fetch(
+      `/api/commander-overview/${activeCollectionId.value}/${activeCommander.value.oracle_id}?scope=all`,
+      { headers: { ...authHeaders.value } },
+    )
+    const payload = await response.json().catch(() => null)
+
+    if (!response.ok || !payload?.success || !payload.groups) {
+      throw new Error(payload?.error || 'Unable to load and score the full Commander card pool.')
+    }
+
+    const cardsByOracleId = new Map<string, Card>()
+    const scores: Record<string, number> = {}
+    const reasons: Record<string, NonNullable<CollectionItem['commander_support_reasons']>> = {}
+    for (const entries of Object.values(payload.groups) as OverviewCardEntry[][]) {
+      for (const entry of entries) {
+        cardsByOracleId.set(entry.card.oracle_id, entry.card)
+        scores[entry.card.oracle_id] = entry.score
+        reasons[entry.card.oracle_id] = entry.reasons ?? []
+      }
+    }
+
+    allCards.value = Array.from(cardsByOracleId.values())
+    allCardScores.value = scores
+    allCardReasons.value = reasons
+    allCandidateTotal.value = Number(payload.candidate_total) || allCards.value.length
+    allCommanderSupport.value = payload.commander_support as CommanderSupportResponse
+    hasLoadedAllCards.value = true
+    selectedCardPool.value = pool
+  } catch (error) {
+    selectedCardPool.value = 'collection'
+    allCardsError.value = error instanceof Error ? error.message : 'Unable to load the full Commander card pool.'
+  } finally {
+    isLoadingAllCards.value = false
+  }
+}
+
+async function loadCommanderSupport() {
+  if (!activeCollectionId.value || !activeCommanderId.value) {
+    collectionCommanderSupport.value = null
+    return
+  }
+
+  const response = await fetch(
+    `/api/commander-support/${activeCollectionId.value}/${activeCommanderId.value}`,
+    {
+      headers: {
+        ...authHeaders.value,
+      },
+    }
+  )
+
+  const data = await response.json().catch(() => ({}))
+
+  if (response.status === 401) {
+    authStore.logout()
+    await router.replace({
+      name: 'login',
+      query: { redirect: route.fullPath },
+    })
+    throw new Error('Authentication required.')
+  }
+
+  if (!response.ok || !data.success) {
+    throw new Error(data.error || 'Unable to load commander-specific support.')
+  }
+
+  collectionCommanderSupport.value = data as CommanderSupportResponse
 }
 
 function getCardTags(card: Card): Set<string> {
@@ -191,23 +408,80 @@ function getCardTags(card: Card): Set<string> {
   return tagSet
 }
 
-function toCollectionItem(card: Card, groupKey: string, index: number): CollectionItem {
+function getCardCategories(card: Card): Set<string> {
+  return new Set(
+    (card.categories ?? [])
+      .map((category) => category?.name?.trim().toLowerCase())
+      .filter((name): name is string => Boolean(name))
+  )
+}
+
+function matchesOverviewBucket(card: Card, bucket: OverviewBucket): boolean {
+  if (bucket.matchType === 'category') {
+    return getCardCategories(card).has(bucket.matchValue.toLowerCase())
+  }
+
+  return getCardTags(card).has(bucket.matchValue)
+}
+
+function createCardTileItem({
+  card,
+  id,
+  score,
+  reasons = [],
+  sourceItem,
+}: {
+  card: Card
+  id: string
+  score: number
+  reasons?: NonNullable<CollectionItem['commander_support_reasons']>
+  sourceItem?: CardTileSource
+}): CollectionItem {
   return {
-    id: index + 1,
-    card_id: `${groupKey}-${card.oracle_id}`,
+    id,
+    card_id: sourceItem?.card_id ?? id,
     oracle_id: card.oracle_id,
     name: card.name,
+    commander_support_score: score,
+    commander_support_reasons: reasons,
     cmc: card.cmc ?? 0,
     card_types: Array.from(new Set(card.faces.flatMap((face) => face.card_types ?? []))),
     set_code: null,
     collector_number: null,
     lang: null,
-    image_uri: card.faces[0]?.normal_image ?? card.faces[0]?.small_image ?? card.faces[0]?.large_image ?? null,
+    image_uri: sourceItem?.image_uri ?? getBestCardImage(card, 0, 'normal'),
     amount: 1,
-    zone: 'mainboard',
+    zone: sourceItem?.zone ?? 'mainboard',
     categories: card.categories ?? [],
     archetypes: card.archetypes ?? [],
   }
+}
+
+function toCollectionItem(card: Card, groupKey: string): CollectionItem {
+  const recommendation = commanderRecommendationByOracleId.value.get(card.oracle_id)
+  const reasons = selectedCardPool.value === 'all'
+    ? allCardReasons.value[card.oracle_id] ?? []
+    : recommendation?.reasons
+      ?? commanderSupport.value?.card_score_reasons?.[card.oracle_id]
+      ?? []
+
+  return createCardTileItem({
+    card,
+    id: `${selectedCardPool.value}-${groupKey}-${card.oracle_id}`,
+    score: commanderCardScore(card),
+    reasons,
+    sourceItem: collectionTileSourcesByOracleId.value[card.oracle_id],
+  })
+}
+
+function commanderSupportEntryToCollectionItem(entry: CommanderSupportEntry, index: number): CollectionItem {
+  return createCardTileItem({
+    card: entry.card,
+    id: `${entry.bucket}-${entry.oracle_id}-${index}`,
+    score: entry.score,
+    reasons: entry.reasons,
+    sourceItem: entry.source_item,
+  })
 }
 
 function goBack() {
@@ -331,51 +605,110 @@ onMounted(() => {
             <p class="eyebrow">Deck Building Overview</p>
             <h2>Category Snapshot Before Assembly</h2>
           </div>
-          <p class="intro-copy">
-            This view surfaces color-legal cards from your collection that match the core deck-building roles we care
-            about next: ramp, card advantage, spot removal, and board wipes. Cards are grouped by inherited or direct
-            tags instead of gameplay categories.
+          <p class="intro-copy">{{ poolDescription }}</p>
+
+          <div class="card-pool-toggle" role="group" aria-label="Card pool">
+            <button
+              class="card-pool-button"
+              :class="{ active: selectedCardPool === 'collection' }"
+              type="button"
+              :aria-pressed="selectedCardPool === 'collection'"
+              :disabled="isLoadingAllCards"
+              @click="selectCardPool('collection')"
+            >
+              My Collection
+            </button>
+            <button
+              class="card-pool-button"
+              :class="{ active: selectedCardPool === 'all' }"
+              type="button"
+              :aria-pressed="selectedCardPool === 'all'"
+              :disabled="isLoadingAllCards"
+              @click="selectCardPool('all')"
+            >
+              {{ isLoadingAllCards ? 'Loading All Cards…' : 'All Cards / Upgrades' }}
+            </button>
+          </div>
+          <p v-if="isLoadingAllCards" class="pool-loading" role="status">
+            Loading the full Commander card pool. This can take a moment for larger color identities.
           </p>
+          <p v-else-if="allCardsError" class="pool-error">{{ allCardsError }}</p>
+
           <div class="summary-strip">
             <div class="summary-chip">
-              <span class="summary-label">Color-Legal Pool</span>
-              <strong>{{ colorLegalCards.length }}</strong>
+              <span class="summary-label">{{ selectedPoolLabel }} Color-Legal Pool</span>
+              <strong>{{ selectedCardPool === 'all' ? allCandidateTotal : colorLegalCards.length }}</strong>
             </div>
             <div class="summary-chip">
               <span class="summary-label">Tagged Matches</span>
               <strong>{{ matchedCardTotal }}</strong>
             </div>
-          <div class="summary-chip">
-            <span class="summary-label">Active Theme</span>
-            <strong>{{ activeTheme.name }}</strong>
+            <div class="summary-chip">
+              <span class="summary-label">Active Theme</span>
+              <strong>{{ activeTheme.name }}</strong>
+            </div>
+            <div v-if="commanderSupport?.supported" class="summary-chip">
+              <span class="summary-label">Commander Synergy Picks</span>
+              <strong>{{ commanderSupportCardTotal }}</strong>
+            </div>
           </div>
-        </div>
-        <div class="overview-actions">
-          <button
-            class="start-builder-button"
-            type="button"
-            :disabled="isStartingBuilder"
-            @click="startConstructingDeck"
-          >
-            Start Constructing Deck
-          </button>
-        </div>
-      </section>
+
+          <div class="overview-actions">
+            <button
+              class="start-builder-button"
+              type="button"
+              :disabled="isStartingBuilder"
+              @click="startConstructingDeck"
+            >
+              Start Constructing Deck
+            </button>
+          </div>
+        </section>
+
+        <section v-if="commanderSupportGroups.length" class="support-spotlight">
+          <div class="support-spotlight-header">
+            <div>
+              <p class="eyebrow">Commander Support</p>
+              <h2>Commander-Specific Synergy Spotlight</h2>
+            </div>
+            <p class="support-spotlight-copy">
+              These picks come from the commander-specific profile and are ranked for this commander before you enter the full builder.
+            </p>
+          </div>
+
+          <DeckSection
+            v-for="group in commanderSupportGroups"
+            :key="group.key"
+            :title="group.title"
+            :eyebrow="group.key"
+            :description="group.description"
+            :items="group.items"
+            view-mode="grid"
+            organization-mode="section"
+            :show-quantity-actions="false"
+            :hide-singleton-amount="true"
+            collapsible
+            @card-click="handleSectionCardClick"
+          />
+        </section>
 
         <section class="workspace-stack">
           <DeckSection
             v-for="group in overviewGroups"
-            :key="group.key"
+            :key="`${selectedCardPool}-${group.key}`"
             :title="group.title"
-            :eyebrow="group.tagSlug"
+            :eyebrow="group.matchValue"
             :description="group.description"
-          :items="group.items"
-          view-mode="grid"
-          organization-mode="section"
-          :show-quantity-actions="false"
-          @card-click="handleSectionCardClick"
-        />
-      </section>
+            :items="group.items"
+            view-mode="grid"
+            organization-mode="section"
+            :show-quantity-actions="false"
+            :hide-singleton-amount="true"
+            collapsible
+            :initially-collapsed="true"
+            @card-click="handleSectionCardClick"
+          />
+        </section>
       </div>
     </section>
   </div>

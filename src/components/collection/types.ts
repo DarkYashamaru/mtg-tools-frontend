@@ -3,6 +3,12 @@ export type CollectionItem = {
   card_id: string
   oracle_id: string | null
   name: string | null
+  commander_support_score?: number
+  commander_support_reasons?: Array<{
+    code: string
+    label: string
+    points: number
+  }>
   cmc?: number
   card_types?: string[]
   color_identity?: Array<{ symbol: string }>

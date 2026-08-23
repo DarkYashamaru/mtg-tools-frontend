@@ -20,12 +20,27 @@ export type CardLike = {
 
 export const DEFAULT_CARD_ASPECT_RATIO = '0.71 / 1'
 
+function getFrontFaceName(card?: CardLike | null): string | null {
+  const cardName = card?.name?.split('//')[0]?.trim()
+  return cardName ? cardName.toLocaleLowerCase() : null
+}
+
 export function getDisplayFaces(card?: CardLike | null): CardFaceLike[] {
   if (!card || !Array.isArray(card.faces)) {
     return []
   }
 
-  return card.faces.filter((face): face is CardFaceLike => !!face)
+  const faces = card.faces.filter((face): face is CardFaceLike => !!face)
+  const frontFaceName = getFrontFaceName(card)
+  const frontFaceIndex = frontFaceName
+    ? faces.findIndex((face) => face.name?.trim().toLocaleLowerCase() === frontFaceName)
+    : -1
+
+  if (frontFaceIndex <= 0) {
+    return faces
+  }
+
+  return [faces[frontFaceIndex], ...faces.slice(0, frontFaceIndex), ...faces.slice(frontFaceIndex + 1)]
 }
 
 export function isMultiFaceCard(card?: CardLike | null): boolean {

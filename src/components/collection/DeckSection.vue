@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import CardImageTile from './CardImageTile.vue'
 import CollectionListSection from './CollectionListSection.vue'
 import type {
@@ -23,6 +23,8 @@ interface Props {
   showCardCount?: boolean
   primaryActionLabel?: string
   primaryActionDisabled?: boolean
+  collapsible?: boolean
+  initiallyCollapsed?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -35,6 +37,8 @@ const props = withDefaults(defineProps<Props>(), {
   showCardCount: true,
   primaryActionLabel: '',
   primaryActionDisabled: false,
+  collapsible: false,
+  initiallyCollapsed: false,
 })
 const emit = defineEmits<{
   hoverItem: [item: CollectionItem | null]
@@ -45,6 +49,7 @@ const emit = defineEmits<{
   primaryAction: [item: CollectionItem]
 }>()
 const totalCards = computed(() => props.items.reduce((sum, item) => sum + item.amount, 0))
+const isCollapsed = ref(props.initiallyCollapsed)
 const categoryGroups = computed(() => (
   props.organizationMode === 'category' ? groupCollectionItemsByCategory(props.items) : []
 ))
@@ -78,38 +83,54 @@ const categoryGroups = computed(() => (
           <template v-if="description">{{ description }}</template>
         </p>
       </div>
+
+      <button
+        v-if="collapsible && items.length"
+        class="section-toggle"
+        type="button"
+        :aria-expanded="!isCollapsed"
+        @click="isCollapsed = !isCollapsed"
+      >
+        {{ isCollapsed ? 'Show cards' : 'Hide cards' }}
+      </button>
     </header>
 
     <div v-if="items.length === 0" class="empty-section">
       No cards in this section.
     </div>
 
-    <div v-else-if="organizationMode === 'category' && categoryGroups.length" class="category-stack">
-      <section v-for="group in categoryGroups" :key="group.name" class="category-block">
-        <header class="category-header">
-          <h3>{{ group.name }}</h3>
-          <p>{{ group.totalCards }} cards</p>
-        </header>
-
-        <div class="grid-layout">
-          <CardImageTile
-            v-for="item in group.items"
-            :key="`${group.name}-${item.id}`"
-            :item="item"
-            :hide-singleton-amount="hideSingletonAmount"
-            :is-mutating="mutatingItemIds.includes(item.id)"
-            :show-quantity-actions="showQuantityActions"
-            :primary-action-label="primaryActionLabel"
-            :primary-action-disabled="primaryActionDisabled"
-            @context-menu="emit('contextMenu', $event)"
-            @increment-item="emit('incrementItem', $event)"
-            @decrement-item="emit('decrementItem', $event)"
-            @card-click="emit('cardClick', $event)"
-            @primary-action="emit('primaryAction', $event)"
-          />
-        </div>
-      </section>
+    <div v-else-if="isCollapsed" class="collapsed-section-copy">
+      {{ totalCards }} cards hidden
     </div>
+
+    <template v-else-if="organizationMode === 'category' && categoryGroups.length">
+      <div class="category-stack">
+        <section v-for="group in categoryGroups" :key="group.name" class="category-block">
+          <header class="category-header">
+            <h3>{{ group.name }}</h3>
+            <p>{{ group.totalCards }} cards</p>
+          </header>
+
+          <div class="grid-layout">
+            <CardImageTile
+              v-for="item in group.items"
+              :key="`${group.name}-${item.id}`"
+              :item="item"
+              :hide-singleton-amount="hideSingletonAmount"
+              :is-mutating="mutatingItemIds.includes(item.id)"
+              :show-quantity-actions="showQuantityActions"
+              :primary-action-label="primaryActionLabel"
+              :primary-action-disabled="primaryActionDisabled"
+              @context-menu="emit('contextMenu', $event)"
+              @increment-item="emit('incrementItem', $event)"
+              @decrement-item="emit('decrementItem', $event)"
+              @card-click="emit('cardClick', $event)"
+              @primary-action="emit('primaryAction', $event)"
+            />
+          </div>
+        </section>
+      </div>
+    </template>
 
     <div v-else class="grid-layout">
       <CardImageTile
@@ -143,6 +164,13 @@ const categoryGroups = computed(() => (
     var(--surface-card);
 }
 
+.section-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
 .section-header h2 {
   margin: 0;
   color: var(--text-light);
@@ -163,7 +191,25 @@ const categoryGroups = computed(() => (
   color: var(--text-muted);
 }
 
-.empty-section {
+.section-toggle {
+  flex-shrink: 0;
+  padding: 8px 12px;
+  border: 1px solid var(--accent-electric-border);
+  border-radius: 10px;
+  background: var(--accent-electric-dim);
+  color: var(--accent-electric);
+  font: inherit;
+  font-size: 0.84rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.section-toggle:hover {
+  background: rgba(56, 189, 248, 0.18);
+}
+
+.empty-section,
+.collapsed-section-copy {
   padding: 18px;
   border-radius: 16px;
   border: 1px dashed var(--surface-border-light);
@@ -196,5 +242,16 @@ const categoryGroups = computed(() => (
   margin: 4px 0 0;
   color: var(--text-muted);
   font-size: 0.86rem;
+}
+
+@media (max-width: 640px) {
+  .section-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .section-toggle {
+    width: 100%;
+  }
 }
 </style>

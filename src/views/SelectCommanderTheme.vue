@@ -6,6 +6,7 @@ import CommanderHero from '@/components/CommanderHero.vue'
 import { useAuthStore } from '@/stores/authStore'
 import { useCollectionStore } from '@/stores/collectionStore'
 import type { CollectionRecord } from '@/components/collection/types'
+import { CUSTOM_THEME_NAME, createCustomTheme } from '@/constants/commanderThemes'
 import type { Card } from '@/utils/deckScorer'
 import { loadSavedCollectionGameplay } from '@/composables/useSavedCollectionGameplay'
 
@@ -40,8 +41,8 @@ const activeCommanderId = computed(() => {
 })
 
 const selectedCommanderThemes = computed(() => {
-  if (!activeCommander.value || rawCommanderThemes.value.length === 0 || collectionCards.value.length === 0) {
-    return []
+  if (!activeCommander.value || collectionCards.value.length === 0) {
+    return [createCustomTheme()]
   }
 
   const commanderColors = new Set(activeCommander.value.color_identity.map((c) => c.symbol.toUpperCase()))
@@ -75,7 +76,9 @@ const selectedCommanderThemes = computed(() => {
     }
   })
 
-  return Array.from(mappingAccumulator.values()).sort((a, b) => b.score - a.score)
+  const themes = Array.from(mappingAccumulator.values()).sort((a, b) => b.score - a.score)
+  themes.push(createCustomTheme())
+  return themes
 })
 
 const maxThemeScore = computed(() => {
@@ -211,18 +214,22 @@ onMounted(() => {
               <tr v-for="theme in selectedCommanderThemes" :key="theme.theme_id">
                 <td class="theme-name-cell">
                   <strong>{{ theme.name }}</strong>
+                  <p v-if="theme.name === CUSTOM_THEME_NAME" class="custom-theme-note">
+                    Continue without an EDHREC-backed theme profile and use manual commander support instead.
+                  </p>
                 </td>
                 <td>
                   <span :class="['curated-badge', theme.curated ? 'curated' : 'community']">
-                    {{ theme.curated ? 'Curated Strategy' : 'Community Built' }}
+                    {{ theme.name === CUSTOM_THEME_NAME ? 'Manual Strategy' : (theme.curated ? 'Curated Strategy' : 'Community Built') }}
                   </span>
                 </td>
                 <td>
                   <div class="score-indicator">
                     <span class="score-number">
-                      {{ Math.round((theme.score / maxThemeScore) * 100) }}%
+                      {{ theme.name === CUSTOM_THEME_NAME ? 'Manual' : `${Math.round((theme.score / maxThemeScore) * 100)}%` }}
                     </span>
                     <div 
+                      v-if="theme.name !== CUSTOM_THEME_NAME"
                       class="score-bar" 
                       :style="{ width: `${(theme.score / maxThemeScore) * 100}%` }"
                     />

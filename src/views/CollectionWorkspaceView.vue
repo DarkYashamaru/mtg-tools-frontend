@@ -87,7 +87,7 @@ const workspaceComponent = computed(() => {
 })
 
 const showCommanderBuilderAction = computed(() => (
-  collection.value?.deck_type.toLowerCase() === 'binder' && !collection.value?.is_virtual
+  collection.value?.deck_type.toLowerCase() === 'binder'
 ))
 const showMasterSearchAction = computed(() => collection.value?.is_virtual === true)
 const shouldShowManaCurve = computed(() => {
@@ -441,7 +441,7 @@ function goToCommanderBuilder() {
 
   router.push({
     name: 'collection-possible-commanders',
-    params: { collectionId: collection.value.id },
+    params: { collectionId: String(collection.value.id) },
   })
 }
 

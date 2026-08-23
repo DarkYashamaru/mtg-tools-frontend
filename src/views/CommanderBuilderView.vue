@@ -16,7 +16,9 @@ import type {
   WorkspaceOrganizationMode,
   WorkspaceViewMode,
 } from '@/components/collection/types'
+import { createCustomTheme, isCustomThemeId } from '@/constants/commanderThemes'
 import { useAuthStore } from '@/stores/authStore'
+import type { CommanderSupportEntry, CommanderSupportResponse } from '@/types/commanderSupport'
 import type { GameplayCard } from '@/types/gameplayCard'
 import type { CardThemeResponse } from '@/utils/deckScorer'
 
@@ -24,7 +26,8 @@ type SourceBucket = {
   key: string
   title: string
   description: string
-  tagSlug: string
+  matchType: 'tag' | 'category'
+  matchValue: string
 }
 
 type SourceTab = SourceBucket & {
@@ -37,25 +40,29 @@ const SOURCE_BUCKETS: SourceBucket[] = [
     key: 'ramp',
     title: 'Ramp',
     description: 'Mana acceleration and resource development tagged from the source collection.',
-    tagSlug: 'ramp',
+    matchType: 'tag',
+    matchValue: 'ramp',
   },
   {
-    key: 'card-advantage',
-    title: 'Card Advantage',
-    description: 'Cards tagged to draw, generate selection, or keep resources flowing.',
-    tagSlug: 'card-advantage',
+    key: 'draw',
+    title: 'Draw',
+    description: 'Cards categorized as draw tools to keep cards flowing.',
+    matchType: 'category',
+    matchValue: 'draw',
   },
   {
     key: 'spot-removal',
     title: 'Spot Removal',
     description: 'Single-target interaction tagged for answering specific threats.',
-    tagSlug: 'spot-removal',
+    matchType: 'tag',
+    matchValue: 'spot-removal',
   },
   {
     key: 'sweeper',
     title: 'Board Wipe',
     description: 'Tagged reset tools for stabilizing or clearing the table.',
-    tagSlug: 'sweeper',
+    matchType: 'tag',
+    matchValue: 'sweeper',
   },
 ]
 
@@ -78,6 +85,7 @@ const addCardSuggestions = ref<CollectionCardSearchResult[]>([])
 const isSearchingCards = ref(false)
 const isAddingDirectCard = ref(false)
 const isAddingSourceCard = ref(false)
+const commanderSupport = ref<CommanderSupportResponse | null>(null)
 const hoveredItem = ref<CollectionItem | null>(null)
 const contextMenuState = ref<CollectionCardContextMenuPayload | null>(null)
 const mutatingItemIds = ref<Array<string | number>>([])
@@ -136,7 +144,7 @@ const sourceTabs = computed<SourceTab[]>(() => {
         return false
       }
 
-      if (!hasTag(item, bucket.tagSlug)) {
+      if (!matchesSourceBucket(item, bucket)) {
         return false
       }
 
@@ -165,11 +173,40 @@ const builderSummary = computed(() => ({
   builderCards: builderCollection.value?.item_count ?? 0,
 }))
 
+const commanderSupportSections = computed(() => {
+  if (!commanderSupport.value?.supported) {
+    return []
+  }
+
+  return (commanderSupport.value.bucket_metadata ?? [])
+    .map((bucket) => ({
+      key: bucket.key,
+      title: bucket.title,
+      description: bucket.description,
+      entries: commanderSupport.value?.buckets?.[bucket.key] ?? [],
+    }))
+    .filter((section) => section.entries.length > 0)
+})
+
 function hasTag(item: CollectionItem, tagSlug: string) {
   const directTags = item.tags?.direct ?? []
   const inheritedTags = item.tags?.inherited ?? []
 
   return [...directTags, ...inheritedTags].some((tag) => tag.slug === tagSlug)
+}
+
+function hasCategory(item: CollectionItem, categoryName: string) {
+  return (item.categories ?? []).some(
+    (category) => (category.name ?? '').trim().toLowerCase() === categoryName.toLowerCase()
+  )
+}
+
+function matchesSourceBucket(item: CollectionItem, bucket: SourceBucket) {
+  if (bucket.matchType === 'category') {
+    return hasCategory(item, bucket.matchValue)
+  }
+
+  return hasTag(item, bucket.matchValue)
 }
 
 function buildItemMetadata(gameplayCard: GameplayCard | undefined) {
@@ -182,6 +219,31 @@ function buildItemMetadata(gameplayCard: GameplayCard | undefined) {
     tags: gameplayCard?.tags ?? { direct: [], inherited: [] },
     categories: gameplayCard?.categories ?? [],
     archetypes: gameplayCard?.archetypes ?? [],
+  }
+}
+
+function commanderSupportEntryToCollectionItem(entry: CommanderSupportEntry, index: number): CollectionItem {
+  const gameplayCard = entry.card
+
+  return {
+    id: `${entry.bucket}-${entry.oracle_id}-${index}`,
+    card_id: entry.source_item.card_id,
+    oracle_id: entry.oracle_id,
+    name: entry.name,
+    cmc: gameplayCard.cmc ?? 0,
+    card_types: Array.from(new Set(
+      gameplayCard.faces.flatMap((face) => face.card_types ?? [])
+    )),
+    color_identity: gameplayCard.color_identity ?? [],
+    tags: gameplayCard.tags ?? { direct: [], inherited: [] },
+    categories: gameplayCard.categories ?? [],
+    archetypes: gameplayCard.archetypes ?? [],
+    set_code: null,
+    collector_number: null,
+    lang: null,
+    image_uri: entry.source_item.image_uri,
+    amount: entry.source_item.amount,
+    zone: entry.source_item.zone,
   }
 }
 
@@ -323,6 +385,10 @@ async function loadThemeProfile() {
     return null
   }
 
+  if (isCustomThemeId(themeId.value)) {
+    return createCustomTheme() as CardThemeResponse
+  }
+
   const response = await fetch(`/api/themes/by-commander/${commanderId.value}`)
   if (!response.ok) {
     throw new Error('Failed to pull commander theme profiles.')
@@ -332,6 +398,39 @@ async function loadThemeProfile() {
   return Array.isArray(themes)
     ? themes.find((theme) => Number(theme.theme_id) === themeId.value) ?? null
     : null
+}
+
+async function loadCommanderSupport() {
+  if (!sourceCollectionId.value || !commanderId.value) {
+    commanderSupport.value = null
+    return
+  }
+
+  const response = await fetch(
+    `/api/commander-support/${sourceCollectionId.value}/${commanderId.value}`,
+    {
+      headers: {
+        ...authHeaders.value,
+      },
+    }
+  )
+
+  const data = await response.json().catch(() => ({}))
+
+  if (response.status === 401) {
+    authStore.logout()
+    await router.replace({
+      name: 'login',
+      query: { redirect: route.fullPath },
+    })
+    throw new Error('Authentication required.')
+  }
+
+  if (!response.ok || !data.success) {
+    throw new Error(data.error || 'Unable to load commander-specific support.')
+  }
+
+  commanderSupport.value = data as CommanderSupportResponse
 }
 
 async function loadBuilderPage() {
@@ -354,6 +453,7 @@ async function loadBuilderPage() {
     sourceCollection.value = await enrichCollectionWithGameplay(rawSourceCollection)
     builderCollection.value = await enrichCollectionWithGameplay(rawBuilderCollection)
     activeTheme.value = selectedTheme
+    await loadCommanderSupport()
     activeSourceTabKey.value = SOURCE_BUCKETS[0].key
     viewMode.value = builderCollection.value.deck_type.toLowerCase() === 'binder' ? 'list' : 'grid'
     organizationMode.value = 'section'
@@ -749,13 +849,49 @@ watch(filterText, () => {
             </div>
 
             <div class="pane-scroll">
-              <DeckSection
-                v-if="activeSourceTab"
-                :title="activeSourceTab.title"
-                :eyebrow="activeSourceTab.tagSlug"
-                :description="activeSourceTab.description"
-                :items="activeSourceTab.items"
-                view-mode="grid"
+              <section
+                v-for="section in commanderSupportSections"
+                :key="section.key"
+                class="commander-support-section"
+              >
+                <DeckSection
+                  :title="section.title"
+                  :eyebrow="section.key"
+                  :description="section.description"
+                  :items="section.entries.map(commanderSupportEntryToCollectionItem)"
+                  view-mode="grid"
+                  organization-mode="section"
+                  :show-quantity-actions="false"
+                  :primary-action-label="'Add to Deck'"
+                  :primary-action-disabled="isAddingSourceCard"
+                  @card-click="handleSectionCardClick"
+                  @primary-action="addSourceItemToBuilder"
+                  @context-menu="handleContextMenu"
+                />
+                <div v-if="section.entries.length" class="support-reason-list">
+                  <article
+                    v-for="entry in section.entries.slice(0, 6)"
+                    :key="`${section.key}-${entry.oracle_id}`"
+                    class="support-reason-card"
+                  >
+                    <div class="support-reason-header">
+                      <strong>{{ entry.name }}</strong>
+                      <span class="support-score">{{ entry.score }}</span>
+                    </div>
+                    <p class="support-reason-copy">
+                      {{ entry.reasons.map((reason) => `${reason.label} (${reason.points > 0 ? '+' : ''}${reason.points})`).join(' · ') }}
+                    </p>
+                  </article>
+                </div>
+              </section>
+
+                <DeckSection
+                  v-if="activeSourceTab"
+                  :title="activeSourceTab.title"
+                  :eyebrow="activeSourceTab.matchValue"
+                  :description="activeSourceTab.description"
+                  :items="activeSourceTab.items"
+                  view-mode="grid"
                 organization-mode="section"
                 :show-quantity-actions="false"
                 :primary-action-label="'Add to Deck'"
@@ -856,6 +992,43 @@ watch(filterText, () => {
 .nav-row {
   display: flex;
   justify-content: flex-start;
+}
+
+.commander-support-section {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.support-reason-list {
+  display: grid;
+  gap: 10px;
+}
+
+.support-reason-card {
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid var(--surface-border-light);
+  background: rgba(15, 23, 42, 0.7);
+}
+
+.support-reason-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--text-light);
+}
+
+.support-score {
+  color: var(--accent-electric);
+  font-weight: 800;
+}
+
+.support-reason-copy {
+  margin: 8px 0 0;
+  color: var(--text-muted);
+  font-size: 0.92rem;
+  line-height: 1.5;
 }
 
 .back-button {
