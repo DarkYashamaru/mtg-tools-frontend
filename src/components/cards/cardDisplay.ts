@@ -36,11 +36,11 @@ export function getDisplayFaces(card?: CardLike | null): CardFaceLike[] {
     ? faces.findIndex((face) => face.name?.trim().toLocaleLowerCase() === frontFaceName)
     : -1
 
-  if (frontFaceIndex <= 0) {
-    return faces
-  }
+  const orderedFaces = frontFaceIndex <= 0
+    ? faces
+    : [faces[frontFaceIndex], ...faces.slice(0, frontFaceIndex), ...faces.slice(frontFaceIndex + 1)]
 
-  return [faces[frontFaceIndex], ...faces.slice(0, frontFaceIndex), ...faces.slice(frontFaceIndex + 1)]
+  return usesSharedFrontImage(card) ? orderedFaces.slice(0, 1) : orderedFaces
 }
 
 export function isMultiFaceCard(card?: CardLike | null): boolean {

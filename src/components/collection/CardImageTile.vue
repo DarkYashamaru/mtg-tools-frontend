@@ -71,14 +71,28 @@ function triggerPrimaryAction() {
     <div class="card-copy">
       <strong>{{ props.item.name || 'Unknown Card' }}</strong>
       <p>{{ props.item.set_code }} · {{ props.item.collector_number }}</p>
+      <dl v-if="props.item.card_insights?.length" class="card-insights">
+        <div v-for="insight in props.item.card_insights" :key="insight.label" class="card-insight">
+          <dt>{{ insight.label }}</dt>
+          <dd>{{ insight.value }}</dd>
+        </div>
+      </dl>
       <div
-        v-if="props.item.commander_support_score !== undefined || (props.item.commander_support_reasons?.length ?? 0) > 0"
+        v-if="props.item.commander_support_score !== undefined || (props.item.commander_support_reasons?.length ?? 0) > 0 || (props.item.score_breakdown?.length ?? 0) > 0"
         class="commander-support-box"
       >
         <div v-if="props.item.commander_support_score !== undefined" class="commander-support-score">
-          Commander Score: <strong>{{ props.item.commander_support_score }}</strong>
+          {{ props.item.score_breakdown?.length ? "Total Score" : "Commander Score" }}: <strong>{{ props.item.commander_support_score }}</strong>
         </div>
-        <p v-if="props.item.commander_support_reasons?.length" class="commander-support-reasons">
+        <template v-if="props.item.score_breakdown?.length">
+          <div v-for="layer in props.item.score_breakdown" :key="layer.key" class="score-breakdown-layer">
+            <strong>{{ layer.label }}: {{ layer.score > 0 ? '+' : '' }}{{ layer.score }}</strong>
+            <p v-if="layer.reasons.length" class="commander-support-reasons">
+              {{ layer.reasons.map((reason) => `${reason.label} (${reason.points > 0 ? '+' : ''}${reason.points})`).join(' · ') }}
+            </p>
+          </div>
+        </template>
+        <p v-else-if="props.item.commander_support_reasons?.length" class="commander-support-reasons">
           {{ props.item.commander_support_reasons.map((reason) => `${reason.label} (${reason.points > 0 ? '+' : ''}${reason.points})`).join(' · ') }}
         </p>
       </div>
@@ -170,6 +184,37 @@ function triggerPrimaryAction() {
   font-size: 0.84rem;
 }
 
+.card-insights {
+  display: grid;
+  gap: 6px;
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  border: 1px solid var(--surface-border-light);
+  border-radius: 12px;
+  background: rgba(8, 12, 20, 0.76);
+}
+
+.card-insight {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.card-insight dt {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+.card-insight dd {
+  margin: 0;
+  color: var(--accent-electric);
+  font-size: 0.95rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
 .commander-support-box {
   margin-top: 10px;
   padding: 10px 12px;
@@ -186,6 +231,15 @@ function triggerPrimaryAction() {
 
 .commander-support-score strong {
   color: var(--accent-electric);
+}
+
+.score-breakdown-layer {
+  margin-top: 6px;
+  font-size: 0.78rem;
+}
+
+.score-breakdown-layer strong {
+  color: var(--text-main);
 }
 
 .commander-support-reasons {

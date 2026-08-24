@@ -22,49 +22,34 @@ import type { CommanderSupportEntry, CommanderSupportResponse } from '@/types/co
 import type { GameplayCard } from '@/types/gameplayCard'
 import type { CardThemeResponse } from '@/utils/deckScorer'
 
-type SourceBucket = {
+type SourceOverviewEntry = {
+  card: GameplayCard
+  score: number
+  reasons: NonNullable<CollectionItem['commander_support_reasons']>
+  score_breakdown?: NonNullable<CollectionItem['score_breakdown']>
+  source_item: Pick<CollectionItem, 'card_id' | 'image_uri' | 'amount' | 'zone'>
+}
+
+type SourceTab = {
   key: string
   title: string
   description: string
-  matchType: 'tag' | 'category'
-  matchValue: string
-}
-
-type SourceTab = SourceBucket & {
+  entries: SourceOverviewEntry[]
   items: CollectionItem[]
   totalCards: number
 }
 
-const SOURCE_BUCKETS: SourceBucket[] = [
-  {
-    key: 'ramp',
-    title: 'Ramp',
-    description: 'Mana acceleration and resource development tagged from the source collection.',
-    matchType: 'tag',
-    matchValue: 'ramp',
-  },
-  {
-    key: 'draw',
-    title: 'Draw',
-    description: 'Cards categorized as draw tools to keep cards flowing.',
-    matchType: 'category',
-    matchValue: 'draw',
-  },
-  {
-    key: 'spot-removal',
-    title: 'Spot Removal',
-    description: 'Single-target interaction tagged for answering specific threats.',
-    matchType: 'tag',
-    matchValue: 'spot-removal',
-  },
-  {
-    key: 'sweeper',
-    title: 'Board Wipe',
-    description: 'Tagged reset tools for stabilizing or clearing the table.',
-    matchType: 'tag',
-    matchValue: 'sweeper',
-  },
-]
+type SourceOverviewResponse = {
+  success: boolean
+  sections: Array<{
+    key: string
+    title: string
+    description: string
+    entries: SourceOverviewEntry[]
+  }>
+  commander_support: CommanderSupportResponse
+}
+
 
 const route = useRoute()
 const router = useRouter()
@@ -76,7 +61,8 @@ const errorMessage = ref('')
 const sourceCollection = ref<CollectionRecord | null>(null)
 const builderCollection = ref<CollectionRecord | null>(null)
 const activeTheme = ref<CardThemeResponse | null>(null)
-const activeSourceTabKey = ref<string>(SOURCE_BUCKETS[0].key)
+const sourceOverview = ref<SourceOverviewResponse | null>(null)
+const activeSourceTabKey = ref<string>('ramp')
 const viewMode = ref<WorkspaceViewMode>('grid')
 const organizationMode = ref<WorkspaceOrganizationMode>('section')
 const filterText = ref('')
@@ -99,10 +85,6 @@ const themeId = computed(() => {
   const parsed = Number(route.params.themeId)
   return Number.isFinite(parsed) ? parsed : null
 })
-
-const activeCommanderItem = computed(() => (
-  sourceCollection.value?.items.find((item) => item.oracle_id === commanderId.value) ?? null
-))
 
 const filteredBuilderCollection = computed<CollectionRecord | null>(() => {
   if (!builderCollection.value) {
@@ -132,37 +114,16 @@ const filteredBuilderCollection = computed<CollectionRecord | null>(() => {
   }
 })
 
-const sourceTabs = computed<SourceTab[]>(() => {
-  const commanderColors = new Set(
-    (activeCommanderItem.value?.color_identity ?? []).map((color) => color.symbol.toUpperCase())
-  )
-  const sourceItems = sourceCollection.value?.items ?? []
-
-  return SOURCE_BUCKETS.map((bucket) => {
-    const items = sourceItems.filter((item) => {
-      if (item.oracle_id === commanderId.value) {
-        return false
-      }
-
-      if (!matchesSourceBucket(item, bucket)) {
-        return false
-      }
-
-      if (commanderColors.size === 0) {
-        return true
-      }
-
-      const itemColors = item.color_identity ?? []
-      return itemColors.every((color) => commanderColors.has(color.symbol.toUpperCase()))
-    })
-
+const sourceTabs = computed<SourceTab[]>(() => (
+  (sourceOverview.value?.sections ?? []).map((section) => {
+    const items = section.entries.map((entry, index) => overviewEntryToCollectionItem(section.key, entry, index))
     return {
-      ...bucket,
+      ...section,
       items,
       totalCards: items.reduce((sum, item) => sum + item.amount, 0),
     }
   })
-})
+))
 
 const activeSourceTab = computed(() => (
   sourceTabs.value.find((tab) => tab.key === activeSourceTabKey.value) ?? sourceTabs.value[0]
@@ -185,36 +146,12 @@ const commanderSupportSections = computed(() => {
       description: bucket.description,
       entries: commanderSupport.value?.buckets?.[bucket.key] ?? [],
     }))
-    .filter((section) => section.entries.length > 0)
 })
-
-function hasTag(item: CollectionItem, tagSlug: string) {
-  const directTags = item.tags?.direct ?? []
-  const inheritedTags = item.tags?.inherited ?? []
-
-  return [...directTags, ...inheritedTags].some((tag) => tag.slug === tagSlug)
-}
-
-function hasCategory(item: CollectionItem, categoryName: string) {
-  return (item.categories ?? []).some(
-    (category) => (category.name ?? '').trim().toLowerCase() === categoryName.toLowerCase()
-  )
-}
-
-function matchesSourceBucket(item: CollectionItem, bucket: SourceBucket) {
-  if (bucket.matchType === 'category') {
-    return hasCategory(item, bucket.matchValue)
-  }
-
-  return hasTag(item, bucket.matchValue)
-}
 
 function buildItemMetadata(gameplayCard: GameplayCard | undefined) {
   return {
     cmc: gameplayCard?.cmc ?? 0,
-    card_types: Array.from(new Set(
-      gameplayCard?.faces.flatMap((face) => face.card_types ?? []) ?? []
-    )),
+    card_types: Array.from(new Set(gameplayCard?.faces.flatMap((face) => face.card_types ?? []) ?? [])),
     color_identity: gameplayCard?.color_identity ?? [],
     tags: gameplayCard?.tags ?? { direct: [], inherited: [] },
     categories: gameplayCard?.categories ?? [],
@@ -222,22 +159,17 @@ function buildItemMetadata(gameplayCard: GameplayCard | undefined) {
   }
 }
 
-function commanderSupportEntryToCollectionItem(entry: CommanderSupportEntry, index: number): CollectionItem {
-  const gameplayCard = entry.card
-
+function overviewEntryToCollectionItem(sectionKey: string, entry: SourceOverviewEntry, index: number): CollectionItem {
+  const card = entry.card
   return {
-    id: `${entry.bucket}-${entry.oracle_id}-${index}`,
+    id: `${sectionKey}-${card.oracle_id}-${index}`,
     card_id: entry.source_item.card_id,
-    oracle_id: entry.oracle_id,
-    name: entry.name,
-    cmc: gameplayCard.cmc ?? 0,
-    card_types: Array.from(new Set(
-      gameplayCard.faces.flatMap((face) => face.card_types ?? [])
-    )),
-    color_identity: gameplayCard.color_identity ?? [],
-    tags: gameplayCard.tags ?? { direct: [], inherited: [] },
-    categories: gameplayCard.categories ?? [],
-    archetypes: gameplayCard.archetypes ?? [],
+    oracle_id: card.oracle_id,
+    name: card.name,
+    commander_support_score: entry.score,
+    commander_support_reasons: entry.reasons,
+    score_breakdown: entry.score_breakdown,
+    ...buildItemMetadata(card),
     set_code: null,
     collector_number: null,
     lang: null,
@@ -246,6 +178,25 @@ function commanderSupportEntryToCollectionItem(entry: CommanderSupportEntry, ind
     zone: entry.source_item.zone,
   }
 }
+
+function commanderSupportEntryToCollectionItem(entry: CommanderSupportEntry, index: number): CollectionItem {
+  return {
+    id: `${entry.bucket}-${entry.oracle_id}-${index}`,
+    card_id: entry.source_item.card_id,
+    oracle_id: entry.oracle_id,
+    name: entry.name,
+    commander_support_score: entry.score,
+    commander_support_reasons: entry.reasons,
+    ...buildItemMetadata(entry.card),
+    set_code: null,
+    collector_number: null,
+    lang: null,
+    image_uri: entry.source_item.image_uri,
+    amount: entry.source_item.amount,
+    zone: entry.source_item.zone,
+  }
+}
+
 
 async function fetchGameplayCardsByName(items: CollectionItem[]) {
   const uniqueNames = Array.from(new Set(
@@ -400,37 +351,22 @@ async function loadThemeProfile() {
     : null
 }
 
-async function loadCommanderSupport() {
-  if (!sourceCollectionId.value || !commanderId.value) {
-    commanderSupport.value = null
-    return
-  }
-
+async function loadSourceOverview() {
   const response = await fetch(
-    `/api/commander-support/${sourceCollectionId.value}/${commanderId.value}`,
-    {
-      headers: {
-        ...authHeaders.value,
-      },
-    }
+    `/api/commander-overview/${sourceCollectionId.value}/${commanderId.value}?scope=collection`,
+    { headers: { ...authHeaders.value } },
   )
-
   const data = await response.json().catch(() => ({}))
-
   if (response.status === 401) {
     authStore.logout()
-    await router.replace({
-      name: 'login',
-      query: { redirect: route.fullPath },
-    })
+    await router.replace({ name: 'login', query: { redirect: route.fullPath } })
     throw new Error('Authentication required.')
   }
-
-  if (!response.ok || !data.success) {
-    throw new Error(data.error || 'Unable to load commander-specific support.')
+  if (!response.ok || !data.success || !Array.isArray(data.sections)) {
+    throw new Error(data.error || 'Unable to load source section profiles.')
   }
-
-  commanderSupport.value = data as CommanderSupportResponse
+  sourceOverview.value = data as SourceOverviewResponse
+  commanderSupport.value = sourceOverview.value.commander_support
 }
 
 async function loadBuilderPage() {
@@ -453,8 +389,8 @@ async function loadBuilderPage() {
     sourceCollection.value = await enrichCollectionWithGameplay(rawSourceCollection)
     builderCollection.value = await enrichCollectionWithGameplay(rawBuilderCollection)
     activeTheme.value = selectedTheme
-    await loadCommanderSupport()
-    activeSourceTabKey.value = SOURCE_BUCKETS[0].key
+    await loadSourceOverview()
+    activeSourceTabKey.value = sourceOverview.value?.sections[0]?.key ?? "ramp"
     viewMode.value = builderCollection.value.deck_type.toLowerCase() === 'binder' ? 'list' : 'grid'
     organizationMode.value = 'section'
     hoveredItem.value = null
@@ -830,7 +766,7 @@ watch(filterText, () => {
                 <p class="eyebrow">Source Pool</p>
                 <h2>{{ sourceCollection.name }}</h2>
                 <p class="pane-copy">
-                  Cards are grouped by inherited or direct tags and filtered to the selected commander color identity.
+                  Cards are grouped and ranked by shared section profiles for the selected commander color identity.
                 </p>
               </div>
 
@@ -888,7 +824,7 @@ watch(filterText, () => {
                 <DeckSection
                   v-if="activeSourceTab"
                   :title="activeSourceTab.title"
-                  :eyebrow="activeSourceTab.matchValue"
+                  :eyebrow="activeSourceTab.key"
                   :description="activeSourceTab.description"
                   :items="activeSourceTab.items"
                   view-mode="grid"

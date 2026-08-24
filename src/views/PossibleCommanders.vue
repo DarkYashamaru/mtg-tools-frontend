@@ -6,7 +6,9 @@ import { storeToRefs } from 'pinia'
 import { useCollectionStore } from '../stores/collectionStore'
 import { useAuthStore } from '@/stores/authStore'
 import { loadSavedCollectionGameplay } from '@/composables/useSavedCollectionGameplay'
-import CardFaceViewer from '@/components/cards/CardFaceViewer.vue'
+import DeckSection from '@/components/collection/DeckSection.vue'
+import { getBestCardImage } from '@/components/cards/cardDisplay'
+import type { CollectionItem } from '@/components/collection/types'
 import type { GameplayCard } from '@/types/gameplayCard'
 
 const router = useRouter()
@@ -101,6 +103,29 @@ const commanderInsights = computed<CommanderInsight[]>(() => {
     )
 })
 
+const commanderItems = computed<CollectionItem[]>(() => (
+  commanderInsights.value.map((item) => ({
+    id: item.commander.oracle_id,
+    card_id: item.commander.oracle_id,
+    oracle_id: item.commander.oracle_id,
+    name: item.commander.name,
+    cmc: item.commander.cmc ?? 0,
+    card_types: Array.from(new Set(item.commander.faces.flatMap((face) => face.card_types ?? []))),
+    color_identity: item.commander.color_identity,
+    set_code: null,
+    collector_number: null,
+    lang: null,
+    image_uri: getBestCardImage(item.commander, 0, 'normal'),
+    amount: 1,
+    zone: 'commander',
+    card_insights: [
+      { label: 'Cards in color identity', value: item.cardsInColorIdentity },
+      { label: 'Cards sharing archetype', value: item.sharedArchetypeCards },
+      { label: 'Cards sharing category', value: item.sharedCategoryCards },
+    ],
+  }))
+))
+
 async function loadCollectionFromBackend(collectionId: string) {
   isLoading.value = true
   errorMessage.value = ''
@@ -135,6 +160,12 @@ function handleCommanderClick(oracleId: string) {
   }
 
   router.push('/tools/bulk-deck-builder/select-commander-theme')
+}
+
+function handleCommanderCardClick(item: CollectionItem) {
+  if (item.oracle_id) {
+    handleCommanderClick(item.oracle_id)
+  }
 }
 
 function goBackToImporter() {
@@ -181,45 +212,17 @@ onMounted(() => {
       </div>
 
       <section class="commander-section">
-        <div class="commander-grid">
-          <button  
-            v-for="item in commanderInsights"  
-            :key="item.commander.oracle_id"  
-            class="commander-card-btn"
-            @click="handleCommanderClick(item.commander.oracle_id)"
-          >
-            <div class="card-image-container">
-              <CardFaceViewer
-                :card="item.commander"
-                image-size="small"
-                :show-flip-control="true"
-                :interactive="true"
-              />
-            </div>
-
-            <div class="card-info">
-              <div class="header-block">
-                <h3>{{ item.commander.name || 'Unknown Commander' }}</h3>
-                <p class="cmc-tag">CMC: {{ item.commander.cmc ?? 0 }}</p>
-              </div>
-
-              <div class="metrics-display">
-                <div class="metric-row">
-                  <span class="metric-label">Cards in color identity</span>
-                  <span class="metric-value">{{ item.cardsInColorIdentity }}</span>
-                </div>
-                <div class="metric-row">
-                  <span class="metric-label">Cards sharing archetype</span>
-                  <span class="metric-value">{{ item.sharedArchetypeCards }}</span>
-                </div>
-                <div class="metric-row">
-                  <span class="metric-label">Cards sharing category</span>
-                  <span class="metric-value">{{ item.sharedCategoryCards }}</span>
-                </div>
-              </div>
-            </div>
-          </button>
-        </div>
+        <DeckSection
+          title="Commander Candidates"
+          eyebrow="Collection analysis"
+          description="Choose a commander to inspect its theme support."
+          :items="commanderItems"
+          view-mode="grid"
+          organization-mode="section"
+          :show-quantity-actions="false"
+          :hide-singleton-amount="true"
+          @card-click="handleCommanderCardClick"
+        />
       </section>
     </div>
   </div>

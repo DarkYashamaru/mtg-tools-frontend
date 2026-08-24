@@ -134,7 +134,7 @@ function goBack() {
 
         <div class="format-note">
           <strong>Supported formats:</strong> one print per line, such as <code>1 Sol Ring (CMM) 123</code>, or scan-export rows such as
-          <code>3x[TAB]ea008094-d995-4740-9b39-c61049356c55</code>.
+          <code>3x[TAB]ea008094-d995-4740-9b39-c61049356c55</code>. Trailing deck-app labels such as <code>[Counters]</code> and ownership markers such as <code>^Have,#37d67a^</code> are ignored.
           Optional section headers like <code>Commander</code>, <code>Mainboard</code>, <code>Sideboard</code>, and <code>Maybeboard</code> are supported for the print-list format.
         </div>
 

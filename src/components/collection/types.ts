@@ -9,6 +9,16 @@ export type CollectionItem = {
     label: string
     points: number
   }>
+  score_breakdown?: Array<{
+    key: string
+    label: string
+    score: number
+    reasons: Array<{ code: string; label: string; points: number }>
+  }>
+  card_insights?: Array<{
+    label: string
+    value: string | number
+  }>
   cmc?: number
   card_types?: string[]
   color_identity?: Array<{ symbol: string }>
