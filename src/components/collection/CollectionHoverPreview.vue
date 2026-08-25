@@ -11,11 +11,14 @@ defineProps<Props>()
 
 <template>
   <aside class="preview-panel">
-    <div v-if="item?.image_uri" class="preview-card">
+    <div v-if="item?.gameplay_card || item?.image_uri" class="preview-card">
       <CardFaceViewer
-        :preview-image-url="item.image_uri"
+        :card="item.gameplay_card"
+        :preview-image-url="item.gameplay_card ? null : item.image_uri"
         :fallback-name="item.name"
         image-size="normal"
+        :show-flip-control="true"
+        :interactive="true"
       />
 
       <div class="preview-copy">

@@ -15,6 +15,7 @@ interface Props {
   organizationMode: WorkspaceOrganizationMode
   mutatingItemIds: Array<string | number>
   showQuantityActions?: boolean
+  showScore?: boolean
 }
 
 const props = defineProps<Props>()
@@ -39,6 +40,7 @@ const mainboardItems = computed(() => props.collection.items.filter((item) => it
       :hide-singleton-amount="true"
       :mutating-item-ids="mutatingItemIds"
       :show-quantity-actions="showQuantityActions"
+      :show-score="showScore"
       @hover-item="emit('hoverItem', $event)"
       @context-menu="emit('contextMenu', $event)"
       @increment-item="emit('incrementItem', $event)"
@@ -51,6 +53,7 @@ const mainboardItems = computed(() => props.collection.items.filter((item) => it
       :organization-mode="organizationMode"
       :mutating-item-ids="mutatingItemIds"
       :show-quantity-actions="showQuantityActions"
+      :show-score="showScore"
       @hover-item="emit('hoverItem', $event)"
       @context-menu="emit('contextMenu', $event)"
       @increment-item="emit('incrementItem', $event)"

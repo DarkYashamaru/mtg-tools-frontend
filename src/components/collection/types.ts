@@ -1,3 +1,5 @@
+import type { GameplayCard } from '@/types/gameplayCard'
+
 export type CollectionItem = {
   id: string | number
   card_id: string
@@ -19,6 +21,7 @@ export type CollectionItem = {
     label: string
     value: string | number
   }>
+  gameplay_card?: GameplayCard
   cmc?: number
   card_types?: string[]
   color_identity?: Array<{ symbol: string }>

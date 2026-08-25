@@ -59,9 +59,12 @@ function triggerPrimaryAction() {
   <article class="card-tile" @click="handleCardClick" @contextmenu.prevent="openContextMenu">
     <div class="card-media">
       <CardFaceViewer
-        :preview-image-url="props.item.image_uri"
+        :card="props.item.gameplay_card"
+        :preview-image-url="props.item.gameplay_card ? null : props.item.image_uri"
         :fallback-name="props.item.name"
         image-size="normal"
+        :show-flip-control="true"
+        :interactive="true"
         :compact-fallback="true"
       />
 

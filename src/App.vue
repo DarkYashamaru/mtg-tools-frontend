@@ -70,9 +70,11 @@ function handleLogout() {
 }
 
 .topbar {
-  max-width: 1200px;
-  margin: 0 auto;
+  width: 100%;
+  max-width: none;
+  margin: 0;
   padding: 18px 24px 0;
+  box-sizing: border-box;
   display: flex;
   align-items: center;
   justify-content: space-between;

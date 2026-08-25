@@ -8,8 +8,8 @@
 
 .page-wrapper {
   width: 100%;
-  max-width: 1300px;
-  margin: 0 auto 64px auto;
+  max-width: none;
+  margin: 0 0 64px;
   padding: 0 24px; /* Safely replaces the calc viewport deduction */
   font-family: var(--font-sans);
   color: var(--text-main);

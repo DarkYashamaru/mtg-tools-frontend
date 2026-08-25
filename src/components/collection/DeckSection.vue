@@ -23,6 +23,7 @@ interface Props {
   showCardCount?: boolean
   primaryActionLabel?: string
   primaryActionDisabled?: boolean
+  showScore?: boolean
   collapsible?: boolean
   initiallyCollapsed?: boolean
 }
@@ -37,6 +38,7 @@ const props = withDefaults(defineProps<Props>(), {
   showCardCount: true,
   primaryActionLabel: '',
   primaryActionDisabled: false,
+  showScore: false,
   collapsible: false,
   initiallyCollapsed: false,
 })
@@ -66,10 +68,15 @@ const categoryGroups = computed(() => (
     :description="description"
     :show-card-count="showCardCount"
     :show-quantity-actions="showQuantityActions"
+    :primary-action-label="primaryActionLabel"
+    :primary-action-disabled="primaryActionDisabled"
+    :show-score="showScore"
     @hover-item="emit('hoverItem', $event)"
     @context-menu="emit('contextMenu', $event)"
     @increment-item="emit('incrementItem', $event)"
     @decrement-item="emit('decrementItem', $event)"
+    @card-click="emit('cardClick', $event)"
+    @primary-action="emit('primaryAction', $event)"
   />
 
   <section v-else class="deck-section">

@@ -1,8 +1,8 @@
 /* DeckDetails.css */
 
 .container {
-  max-width: 1000px;
-  margin: 40px auto;
+  max-width: none;
+  margin: 40px 24px;
   padding: 32px;
   background: var(--surface-card);
   border: 1px solid var(--surface-border);

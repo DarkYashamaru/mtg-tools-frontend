@@ -12,6 +12,9 @@ interface Props {
   description?: string
   showCardCount?: boolean
   showQuantityActions?: boolean
+  primaryActionLabel?: string
+  primaryActionDisabled?: boolean
+  showScore?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -22,12 +25,17 @@ const props = withDefaults(defineProps<Props>(), {
   description: '',
   showCardCount: true,
   showQuantityActions: true,
+  primaryActionLabel: '',
+  primaryActionDisabled: false,
+  showScore: false,
 })
 const emit = defineEmits<{
   hoverItem: [item: CollectionItem | null]
   contextMenu: [payload: CollectionCardContextMenuPayload]
   incrementItem: [item: CollectionItem]
   decrementItem: [item: CollectionItem]
+  cardClick: [item: CollectionItem]
+  primaryAction: [item: CollectionItem]
 }>()
 const totalCards = computed(() => props.items.reduce((sum, item) => sum + item.amount, 0))
 
@@ -76,13 +84,14 @@ function isMutating(item: CollectionItem) {
 
     <div v-else class="list-layout">
       <div class="table-wrap" @mouseleave="clearHover()">
-        <div class="table-head">
+        <div class="table-head" :class="{ 'has-score': showScore }">
           <span>Qty</span>
+          <span v-if="showScore">Score</span>
           <span>Card</span>
           <span>Set</span>
           <span>No.</span>
           <span>Lang</span>
-          <span>{{ showQuantityActions ? 'Adjust' : 'Status' }}</span>
+          <span>{{ primaryActionLabel || (showQuantityActions ? 'Adjust' : 'Status') }}</span>
         </div>
 
         <div class="table-body">
@@ -90,18 +99,30 @@ function isMutating(item: CollectionItem) {
             v-for="item in items"
             :key="item.id"
             class="table-row"
+            :class="{ 'has-score': showScore }"
             tabindex="0"
             @mouseenter="handleItemEnter(item)"
             @focus="handleItemEnter(item)"
             @blur="clearHover()"
+            @click="emit('cardClick', item)"
             @contextmenu.prevent="openContextMenu($event, item)"
           >
             <span class="qty">{{ showQuantity(item) ? `${item.amount}x` : '' }}</span>
+            <strong v-if="showScore" class="score-value">{{ item.commander_support_score ?? '—' }}</strong>
             <strong class="name-text">{{ item.name || 'Unknown Card' }}</strong>
             <span>{{ item.set_code || '—' }}</span>
             <span>{{ item.collector_number || '—' }}</span>
             <span>{{ item.lang || '—' }}</span>
             <div class="row-actions">
+              <button
+                v-if="primaryActionLabel"
+                class="primary-action-button"
+                type="button"
+                :disabled="primaryActionDisabled"
+                @click.stop="emit('primaryAction', item)"
+              >
+                {{ primaryActionLabel }}
+              </button>
               <button
                 v-if="showQuantityActions"
                 class="quantity-button"
@@ -120,7 +141,7 @@ function isMutating(item: CollectionItem) {
               >
                 +
               </button>
-              <span v-if="!showQuantityActions" class="read-only-label">Read-only</span>
+              <span v-if="!showQuantityActions && !primaryActionLabel" class="read-only-label">Read-only</span>
             </div>
           </div>
         </div>
@@ -183,6 +204,11 @@ function isMutating(item: CollectionItem) {
   padding: 12px 14px;
 }
 
+.table-head.has-score,
+.table-row.has-score {
+  grid-template-columns: 66px 70px minmax(0, 1.8fr) 100px 90px 90px 88px;
+}
+
 .table-head {
   background: rgba(15, 23, 42, 0.92);
   color: var(--text-muted);
@@ -209,7 +235,8 @@ function isMutating(item: CollectionItem) {
   outline: none;
 }
 
-.qty {
+.qty,
+.score-value {
   color: var(--accent-electric);
   font-weight: 800;
 }
@@ -232,22 +259,38 @@ function isMutating(item: CollectionItem) {
   font-weight: 700;
 }
 
+.primary-action-button,
 .quantity-button {
-  width: 28px;
-  height: 28px;
   border: 1px solid var(--surface-border-light);
   border-radius: 8px;
   background: var(--surface-hover);
   color: var(--text-main);
   font-family: var(--font-sans);
-  font-size: 0.95rem;
   font-weight: 800;
   cursor: pointer;
 }
 
+.primary-action-button {
+  padding: 7px 10px;
+  font-size: 0.78rem;
+}
+
+.primary-action-button:hover:not(:disabled) {
+  border-color: var(--accent-electric-border);
+  background: var(--accent-electric-dim);
+  color: var(--accent-electric);
+}
+
+.primary-action-button:disabled,
 .quantity-button:disabled {
   cursor: not-allowed;
   opacity: 0.55;
+}
+
+.quantity-button {
+  width: 28px;
+  height: 28px;
+  font-size: 0.95rem;
 }
 
 .table-row:hover .name-text,
@@ -259,6 +302,11 @@ function isMutating(item: CollectionItem) {
   .table-head,
   .table-row {
     grid-template-columns: 72px minmax(0, 1fr) 72px 76px;
+  }
+
+  .table-head.has-score,
+  .table-row.has-score {
+    grid-template-columns: 56px 58px minmax(0, 1fr) 72px 76px;
   }
 
   .table-head span:nth-child(4),

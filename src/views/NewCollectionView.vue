@@ -159,8 +159,8 @@ function goBack() {
 }
 
 .create-shell {
-  max-width: 1080px;
-  margin: 0 auto;
+  max-width: none;
+  margin: 0;
   display: grid;
   gap: 24px;
 }

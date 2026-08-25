@@ -117,6 +117,7 @@ function mergeCollectionMetadata(updatedCollection: CollectionRecord): Collectio
         card_types: existingItem?.card_types ?? [],
         categories: existingItem?.categories ?? [],
         archetypes: existingItem?.archetypes ?? [],
+        gameplay_card: existingItem?.gameplay_card,
       }
     }),
   }
@@ -130,6 +131,7 @@ function buildItemMetadata(gameplayCard: GameplayCard | undefined) {
     )),
     categories: gameplayCard?.categories ?? [],
     archetypes: gameplayCard?.archetypes ?? [],
+    gameplay_card: gameplayCard,
   }
 }
 
@@ -176,13 +178,14 @@ async function enrichCollectionWithGameplay(
           card_types: item.card_types ?? [],
           categories: item.categories ?? [],
           archetypes: item.archetypes ?? [],
+          gameplay_card: item.gameplay_card,
         },
       ])
   )
 
   const missingItems = baseCollection.items.filter((item) => (
     Boolean(item.oracle_id)
-    && !existingMetadataByOracleId.has(item.oracle_id as string)
+    && !existingMetadataByOracleId.get(item.oracle_id as string)?.gameplay_card
     && Boolean(item.name)
   ))
 
@@ -196,13 +199,13 @@ async function enrichCollectionWithGameplay(
       const existingMetadata = item.oracle_id
         ? existingMetadataByOracleId.get(item.oracle_id)
         : undefined
-      const gameplayCard = item.oracle_id
+      const gameplayCard = existingMetadata?.gameplay_card ?? (item.oracle_id
         ? fetchedGameplayByOracleId.get(item.oracle_id)
-        : undefined
+        : undefined)
 
       return {
         ...item,
-        ...(existingMetadata ?? buildItemMetadata(gameplayCard)),
+        ...(existingMetadata?.gameplay_card ? existingMetadata : buildItemMetadata(gameplayCard)),
       }
     }),
   }
@@ -600,12 +603,12 @@ watch(addCardQuery, (value) => {
 
 <style scoped>
 .workspace-page {
-  padding: 20px;
+  padding: 24px;
 }
 
 .workspace-shell {
-  max-width: 1520px;
-  margin: 0 auto;
+  max-width: none;
+  margin: 0;
   display: grid;
   gap: 18px;
 }

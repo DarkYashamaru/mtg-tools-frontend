@@ -5,8 +5,8 @@
 
 .search-container {
   width: 100%;
-  max-width: 1400px;
-  margin: 40px auto; 
+  max-width: none;
+  margin: 40px 0;
   padding: 0 24px;
   font-family: var(--font-sans);
   color: var(--text-main);
