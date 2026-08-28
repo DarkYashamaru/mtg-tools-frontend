@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { COLOR_FILTER_OPTIONS } from './filtering'
 import type {
   CollectionCardSearchResult,
   CollectionRecord,
@@ -12,6 +13,13 @@ interface Props {
   modelValue: WorkspaceViewMode
   organizationMode: WorkspaceOrganizationMode
   filterText: string
+  colorFilters?: string[]
+  supertypeFilters?: string[]
+  cardTypeFilters?: string[]
+  subtypeFilters?: string[]
+  supertypeOptions?: string[]
+  cardTypeOptions?: string[]
+  subtypeOptions?: string[]
   addCardQuery: string
   addCardSuggestions: CollectionCardSearchResult[]
   addCardLoading: boolean
@@ -25,6 +33,10 @@ const emit = defineEmits<{
   'update:modelValue': [value: WorkspaceViewMode]
   'update:organizationMode': [value: WorkspaceOrganizationMode]
   'update:filterText': [value: string]
+  'update:colorFilters': [value: string[]]
+  'update:supertypeFilters': [value: string[]]
+  'update:cardTypeFilters': [value: string[]]
+  'update:subtypeFilters': [value: string[]]
   'update:addCardQuery': [value: string]
   selectAddCardSuggestion: [value: CollectionCardSearchResult]
   dismissAddCardSuggestions: []
@@ -35,8 +47,21 @@ const isReadOnly = computed(() => props.collection.is_read_only === true)
 const canUseGrid = computed(() => true)
 const canUseList = computed(() => true)
 const activeSuggestionIndex = ref(-1)
+const openFacet = ref<string | null>(null)
 const shouldShowSuggestions = computed(() => (
   props.addCardQuery.trim().length >= 3 && (props.addCardLoading || props.addCardSuggestions.length > 0)
+))
+const hasFacetFilters = computed(() => (
+(props.colorFilters ?? []).length > 0
+  || (props.supertypeFilters ?? []).length > 0
+  || (props.cardTypeFilters ?? []).length > 0
+  || (props.subtypeFilters ?? []).length > 0
+))
+const showFacetFilters = computed(() => (
+  props.colorFilters !== undefined
+  && props.supertypeFilters !== undefined
+  && props.cardTypeFilters !== undefined
+  && props.subtypeFilters !== undefined
 ))
 const shouldShowEmptyState = computed(() => (
   props.addCardQuery.trim().length >= 3 && !props.addCardLoading && props.addCardSuggestions.length === 0
@@ -48,6 +73,49 @@ function setViewMode(value: WorkspaceViewMode) {
 
 function setOrganizationMode(value: WorkspaceOrganizationMode) {
   emit('update:organizationMode', value)
+}
+
+function toggleFilter(values: string[] | undefined, value: string): string[] {
+  const current = values ?? []
+  return current.includes(value)
+    ? current.filter((candidate) => candidate !== value)
+    : [...current, value]
+}
+
+function toggleColorFilter(value: string) {
+  const current = props.colorFilters ?? []
+
+  if (value === 'colorless') {
+    emit('update:colorFilters', current.includes(value) ? [] : [value])
+    return
+  }
+
+  emit('update:colorFilters', toggleFilter(current.filter((color) => color !== 'colorless'), value))
+}
+
+function toggleFacetDropdown(facet: string) {
+  openFacet.value = openFacet.value === facet ? null : facet
+}
+
+function closeFacetDropdown(event?: Event) {
+  const target = event?.target
+  if (target instanceof Element && target.closest('.facet-dropdown')) {
+    return
+  }
+  openFacet.value = null
+}
+
+function handleFacetKeydown(event: KeyboardEvent) {
+  if (event.key === 'Escape') {
+    openFacet.value = null
+  }
+}
+
+function clearFacetFilters() {
+  emit('update:colorFilters', [])
+  emit('update:supertypeFilters', [])
+  emit('update:cardTypeFilters', [])
+  emit('update:subtypeFilters', [])
 }
 
 function selectSuggestion(suggestion: CollectionCardSearchResult) {
@@ -92,6 +160,16 @@ watch(
   },
   { deep: true }
 )
+
+onMounted(() => {
+  window.addEventListener('click', closeFacetDropdown)
+  window.addEventListener('keydown', handleFacetKeydown)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('click', closeFacetDropdown)
+  window.removeEventListener('keydown', handleFacetKeydown)
+})
 
 watch(
   () => props.addCardQuery,
@@ -223,6 +301,57 @@ watch(
           @input="emit('update:filterText', ($event.target as HTMLInputElement).value)"
         >
       </label>
+
+      <div v-if="showFacetFilters" class="facet-filters">
+        <div class="facet-dropdown">
+          <button type="button" class="facet-trigger" :aria-expanded="openFacet === 'colors'" @click.stop="toggleFacetDropdown('colors')">
+            Commander identity <span>{{ colorFilters?.length || '' }}</span>
+          </button>
+          <div v-if="openFacet === 'colors'" class="facet-menu" @click.stop>
+            <label v-for="option in COLOR_FILTER_OPTIONS" :key="option.value" class="facet-option">
+              <input type="checkbox" :checked="colorFilters?.includes(option.value)" @change="toggleColorFilter(option.value)">
+              <span>{{ option.label }}</span>
+            </label>
+          </div>
+        </div>
+        <div class="facet-dropdown">
+          <button type="button" class="facet-trigger" :aria-expanded="openFacet === 'supertypes'" @click.stop="toggleFacetDropdown('supertypes')">
+            Supertypes <span>{{ supertypeFilters?.length || '' }}</span>
+          </button>
+          <div v-if="openFacet === 'supertypes'" class="facet-menu" @click.stop>
+            <label v-for="option in supertypeOptions" :key="option" class="facet-option">
+              <input type="checkbox" :checked="supertypeFilters?.includes(option)" @change="emit('update:supertypeFilters', toggleFilter(supertypeFilters, option))">
+              <span>{{ option }}</span>
+            </label>
+          </div>
+        </div>
+        <div class="facet-dropdown">
+          <button type="button" class="facet-trigger" :aria-expanded="openFacet === 'types'" @click.stop="toggleFacetDropdown('types')">
+            Card types <span>{{ cardTypeFilters?.length || '' }}</span>
+          </button>
+          <div v-if="openFacet === 'types'" class="facet-menu" @click.stop>
+            <label v-for="option in cardTypeOptions" :key="option" class="facet-option">
+              <input type="checkbox" :checked="cardTypeFilters?.includes(option)" @change="emit('update:cardTypeFilters', toggleFilter(cardTypeFilters, option))">
+              <span>{{ option }}</span>
+            </label>
+          </div>
+        </div>
+        <div class="facet-dropdown">
+          <button type="button" class="facet-trigger" :aria-expanded="openFacet === 'subtypes'" @click.stop="toggleFacetDropdown('subtypes')">
+            Subtypes <span>{{ subtypeFilters?.length || '' }}</span>
+          </button>
+          <div v-if="openFacet === 'subtypes'" class="facet-menu" @click.stop>
+            <label v-for="option in subtypeOptions" :key="option" class="facet-option">
+              <input type="checkbox" :checked="subtypeFilters?.includes(option)" @change="emit('update:subtypeFilters', toggleFilter(subtypeFilters, option))">
+              <span>{{ option }}</span>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <button v-if="showFacetFilters && hasFacetFilters" class="clear-filters" type="button" @click="clearFacetFilters">
+        Clear type and color filters
+      </button>
     </div>
   </section>
 </template>
@@ -425,6 +554,92 @@ watch(
   padding: 12px;
 }
 
+.facet-filters {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(130px, 1fr));
+  gap: 10px;
+  width: 100%;
+}
+
+.facet-dropdown {
+  position: relative;
+  min-width: 0;
+}
+
+.facet-trigger {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  min-height: 42px;
+  padding: 9px 11px;
+  border: 1px solid var(--surface-border-light);
+  border-radius: 10px;
+  background: var(--surface-hover);
+  color: var(--text-main);
+  font: inherit;
+  font-size: 0.86rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.facet-trigger[aria-expanded="true"] {
+  border-color: var(--accent-electric);
+  color: var(--accent-electric);
+}
+
+.facet-menu {
+  position: absolute;
+  z-index: 40;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  display: grid;
+  max-height: 260px;
+  overflow-y: auto;
+  padding: 8px;
+  border: 1px solid var(--surface-border-light);
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.98);
+  box-shadow: var(--shadow-lg);
+}
+
+.facet-option {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 7px;
+  border-radius: 8px;
+  color: var(--text-main);
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.facet-option:hover {
+  background: var(--surface-hover);
+}
+
+.facet-option input {
+  accent-color: var(--accent-electric);
+}
+
+.clear-filters {
+  padding: 9px 12px;
+  border: 1px solid var(--surface-border-light);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 0.84rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.clear-filters:hover {
+  color: var(--accent-electric);
+  border-color: var(--accent-electric-border);
+}
+
 @media (max-width: 980px) {
   .toolbar {
     grid-template-columns: 1fr;
@@ -439,6 +654,10 @@ watch(
   .add-card-shell,
   .filter-field {
     width: 100%;
+  }
+
+  .facet-filters {
+    grid-template-columns: 1fr;
   }
 }
 </style>

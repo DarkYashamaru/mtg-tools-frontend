@@ -6,10 +6,12 @@ const deckText = ref('')
 const resultText = ref('')
 const loading = ref(false)
 const error = ref('')
+const warnings = ref<string[]>([])
 
 async function analyzeDeck() {
   error.value = ''
   resultText.value = ''
+  warnings.value = []
 
   if (!deckText.value.trim()) {
     error.value = 'Please paste a deck list.'
@@ -36,6 +38,7 @@ async function analyzeDeck() {
     }
 
     resultText.value = data.result
+    warnings.value = Array.isArray(data.warnings) ? data.warnings : []
 
   } catch (err: any) {
     error.value = err.message || 'Something went wrong'
@@ -89,6 +92,17 @@ function downloadResult() {
     >
       {{ error }}
     </p>
+
+    <div
+      v-if="warnings.length"
+      class="warnings"
+      role="status"
+    >
+      <p>Some entries were adjusted or skipped:</p>
+      <ul>
+        <li v-for="warning in warnings" :key="warning">{{ warning }}</li>
+      </ul>
+    </div>
 
     <div
       v-if="resultText"

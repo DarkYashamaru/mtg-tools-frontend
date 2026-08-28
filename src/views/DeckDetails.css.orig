@@ -163,5 +163,3 @@ h1 {
   .download-button {
     width: 100%;
     text-align: center;
-  }
-}

@@ -21,15 +21,16 @@ import { useAuthStore } from '@/stores/authStore'
 import type { GameplayCard } from '@/types/gameplayCard'
 import type { CardThemeResponse } from '@/utils/deckScorer'
 
+type SourcePool = 'collection' | 'all'
+type SourceMode = 'sections' | 'spotlight'
+
 type SourceOverviewEntry = {
-  card: GameplayCard
+  oracle_id: string
+  name: string
   score: number
   reasons: NonNullable<CollectionItem['commander_support_reasons']>
   score_breakdown?: NonNullable<CollectionItem['score_breakdown']>
-  source_item: Pick<
-    CollectionItem,
-    'card_id' | 'image_uri' | 'amount' | 'zone'
-  >
+  source_item: Pick<CollectionItem, 'card_id' | 'image_uri' | 'amount' | 'zone'>
 }
 
 type SourceTab = {
@@ -38,17 +39,28 @@ type SourceTab = {
   description: string
   entries: SourceOverviewEntry[]
   items: CollectionItem[]
-  totalCards: number
+  entryTotal: number
+  nextOffset: number
+  hasMore: boolean
+  isLoading: boolean
+  loadError: string
 }
 
-type SourceOverviewResponse = {
+type SourceMetadataResponse = {
   success: boolean
-  sections: Array<{
+  scope: SourcePool
+  candidate_total: number | null
+  sections: Array<Pick<SourceTab, 'key' | 'title' | 'description'> & { entry_total: number }>
+}
+
+type SourcePageResponse = SourceMetadataResponse & {
+  section: {
     key: string
-    title: string
-    description: string
     entries: SourceOverviewEntry[]
-  }>
+    entry_total: number
+    next_offset: number
+    has_more: boolean
+  }
 }
 
 const route = useRoute()
@@ -64,8 +76,16 @@ const builderCollection = ref<CollectionRecord | null>(null)
 
 const activeTheme = ref<CardThemeResponse | null>(null)
 
-const sourceTabs = ref<SourceTab[]>([])
+const selectedSourcePool = ref<SourcePool>('collection')
+const sourceMode = ref<SourceMode>('sections')
+const sourceTabsByPool = ref<Record<SourcePool, SourceTab[]>>({ collection: [], all: [] })
+const spotlightTabsByPool = ref<Record<SourcePool, SourceTab[]>>({ collection: [], all: [] })
 const activeSourceTabKey = ref<string>('ramp')
+const isLoadingAllSource = ref(false)
+const sourcePoolError = ref('')
+const builderScoresByOracleId = ref<Record<string, SourceOverviewEntry>>({})
+
+const sourceTabs = computed(() => (sourceMode.value === 'spotlight' ? spotlightTabsByPool.value : sourceTabsByPool.value)[selectedSourcePool.value])
 
 const viewMode = ref<WorkspaceViewMode>('grid')
 const organizationMode = ref<WorkspaceOrganizationMode>('section')
@@ -114,15 +134,14 @@ const activeSourceTab = computed(() => {
 })
 
 const highestSourceEntryByOracleId = computed(() => {
-  const entriesByOracleId = new Map<string, SourceOverviewEntry>()
+  const entriesByOracleId = new Map<string, SourceOverviewEntry>(
+    Object.entries(builderScoresByOracleId.value),
+  )
 
   for (const section of sourceTabs.value) {
     for (const entry of section.entries) {
-      const current = entriesByOracleId.get(entry.card.oracle_id)
-
-      if (!current || entry.score > current.score) {
-        entriesByOracleId.set(entry.card.oracle_id, entry)
-      }
+      const current = entriesByOracleId.get(entry.oracle_id)
+      if (!current || entry.score > current.score) entriesByOracleId.set(entry.oracle_id, entry)
     }
   }
 
@@ -151,8 +170,7 @@ const scoredBuilderCollection = computed<CollectionRecord | null>(() => {
         commander_support_score: sourceEntry.score,
         commander_support_reasons: sourceEntry.reasons,
         score_breakdown: sourceEntry.score_breakdown,
-        gameplay_card:
-          item.gameplay_card ?? sourceEntry.card,
+        gameplay_card: item.gameplay_card,
       }
     }),
   }
@@ -201,7 +219,7 @@ const filteredBuilderCollection =
 
 const builderSummary = computed(() => ({
   sourceCards: sourceTabs.value.reduce(
-    (sum, tab) => sum + tab.totalCards,
+    (sum, tab) => sum + tab.entryTotal,
     0,
   ),
 
@@ -247,38 +265,41 @@ function overviewEntryToCollectionItem(
   entry: SourceOverviewEntry,
   index: number,
 ): CollectionItem {
-  const card = entry.card
-
   return {
-    id: `${sectionKey}-${card.oracle_id}-${index}`,
-
+    id: `${selectedSourcePool.value}-${sectionKey}-${entry.oracle_id}-${index}`,
     card_id: entry.source_item.card_id,
-    oracle_id: card.oracle_id,
-    name: card.name,
-
-    commander_support_score:
-      entry.score,
-
-    commander_support_reasons:
-      entry.reasons,
-
-    score_breakdown:
-      entry.score_breakdown,
-
-    ...buildItemMetadata(card),
-
+    oracle_id: entry.oracle_id,
+    name: entry.name,
+    commander_support_score: entry.score,
+    commander_support_reasons: entry.reasons,
+    score_breakdown: entry.score_breakdown,
+    cmc: 0,
+    card_types: [],
+    color_identity: [],
+    tags: { direct: [], inherited: [] },
+    categories: [],
+    archetypes: [],
     set_code: null,
     collector_number: null,
     lang: null,
+    image_uri: entry.source_item.image_uri,
+    amount: entry.source_item.amount,
+    zone: entry.source_item.zone,
+  }
+}
 
-    image_uri:
-      entry.source_item.image_uri,
-
-    amount:
-      entry.source_item.amount,
-
-    zone:
-      entry.source_item.zone,
+function makeSourceTab(section: SourceMetadataResponse['sections'][number]): SourceTab {
+  return {
+    key: section.key,
+    title: section.title,
+    description: section.description,
+    entries: [],
+    items: [],
+    entryTotal: section.entry_total,
+    nextOffset: 0,
+    hasMore: section.entry_total > 0,
+    isLoading: false,
+    loadError: '',
   }
 }
 
@@ -577,73 +598,162 @@ async function loadThemeProfile() {
     : null
 }
 
-async function loadSourceOverview() {
+async function loadSourceMetadata(pool: SourcePool) {
   const response = await fetch(
-    `/api/commander-overview/${sourceCollectionId.value}/${commanderId.value}?scope=collection`,
-    {
-      headers: {
-        ...authHeaders.value,
-      },
-    },
+    `/api/commander-builder-source/${sourceCollectionId.value}/${commanderId.value}?scope=${pool}`,
+    { headers: { ...authHeaders.value } },
   )
-
-  const data = await response
-    .json()
-    .catch(() => ({}))
-
+  const data = await response.json().catch(() => ({}))
   if (response.status === 401) {
     authStore.logout()
-
-    await router.replace({
-      name: 'login',
-
-      query: {
-        redirect: route.fullPath,
-      },
-    })
-
-    throw new Error(
-      'Authentication required.',
-    )
+    await router.replace({ name: 'login', query: { redirect: route.fullPath } })
+    throw new Error('Authentication required.')
   }
-
-  if (
-    !response.ok ||
-    !data.success ||
-    !Array.isArray(data.sections)
-  ) {
-    throw new Error(
-      data.error ||
-        'Unable to load source section profiles.',
-    )
+  if (!response.ok || !data.success || !Array.isArray(data.sections)) {
+    throw new Error(data.error || 'Unable to load source section profiles.')
   }
+  const payload = data as SourceMetadataResponse
+  sourceTabsByPool.value = {
+    ...sourceTabsByPool.value,
+    [pool]: payload.sections.map(makeSourceTab),
+  }
+}
 
-  const overview =
-    data as SourceOverviewResponse
+function updateSourceTab(pool: SourcePool, tabKey: string, update: (tab: SourceTab) => SourceTab) {
+  sourceTabsByPool.value = {
+    ...sourceTabsByPool.value,
+    [pool]: sourceTabsByPool.value[pool].map((tab) => tab.key === tabKey ? update(tab) : tab),
+  }
+}
 
-  sourceTabs.value =
-    overview.sections.map((section) => {
-      const items =
-        section.entries.map(
-          (entry, index) =>
-            overviewEntryToCollectionItem(
-              section.key,
-              entry,
-              index,
-            ),
-        )
-
+async function loadSectionPage(pool: SourcePool, sectionKey: string) {
+  const tab = sourceTabsByPool.value[pool].find((item) => item.key === sectionKey)
+  if (!tab || tab.isLoading || (!tab.hasMore && tab.entries.length > 0)) return
+  updateSourceTab(pool, sectionKey, (item) => ({ ...item, isLoading: true, loadError: '' }))
+  try {
+    const offset = tab.nextOffset
+    const response = await fetch(
+      `/api/commander-builder-source/${sourceCollectionId.value}/${commanderId.value}?scope=${pool}&section_key=${encodeURIComponent(sectionKey)}&offset=${offset}&limit=100`,
+      { headers: { ...authHeaders.value } },
+    )
+    const data = await response.json().catch(() => ({}))
+    if (response.status === 401) {
+      authStore.logout()
+      await router.replace({ name: 'login', query: { redirect: route.fullPath } })
+      throw new Error('Authentication required.')
+    }
+    if (!response.ok || !data.success || !data.section || !Array.isArray(data.section.entries)) {
+      throw new Error(data.error || 'Unable to load source cards.')
+    }
+    const page = data as SourcePageResponse
+    updateSourceTab(pool, sectionKey, (item) => {
+      const entries = [...item.entries, ...page.section.entries]
+      const existingItemsByOracleId = new Map(item.items.map((sourceItem) => [sourceItem.oracle_id, sourceItem]))
       return {
-        ...section,
-        items,
-
-        totalCards: items.reduce(
-          (sum, item) =>
-            sum + item.amount,
-          0,
-        ),
+        ...item,
+        entries,
+        items: entries.map((entry, index) => {
+          const nextItem = overviewEntryToCollectionItem(sectionKey, entry, index)
+          const existingItem = existingItemsByOracleId.get(entry.oracle_id)
+          return existingItem?.gameplay_card
+            ? { ...nextItem, ...buildItemMetadata(existingItem.gameplay_card) }
+            : nextItem
+        }),
+        entryTotal: page.section.entry_total,
+        nextOffset: page.section.next_offset,
+        hasMore: page.section.has_more,
+        isLoading: false,
+        loadError: '',
       }
     })
+  } catch (error) {
+    updateSourceTab(pool, sectionKey, (item) => ({
+      ...item,
+      isLoading: false,
+      loadError: error instanceof Error ? error.message : 'Unable to load source cards.',
+    }))
+  }
+}
+
+async function loadSpotlightMetadata(pool: SourcePool) {
+  const response = await fetch(`/api/commander-builder-source/${sourceCollectionId.value}/${commanderId.value}/spotlight?scope=${pool}`, { headers: { ...authHeaders.value } })
+  const data = await response.json().catch(() => ({}))
+  if (!response.ok || !data.success) throw new Error(data.error || 'Unable to load commander spotlight.')
+  spotlightTabsByPool.value = { ...spotlightTabsByPool.value, [pool]: (data.buckets ?? []).map(makeSourceTab) }
+}
+
+async function loadSpotlightPage(pool: SourcePool, bucketKey: string) {
+  const tab = spotlightTabsByPool.value[pool].find((item) => item.key === bucketKey)
+  if (!tab || tab.isLoading || (!tab.hasMore && tab.entries.length > 0)) return
+  const offset = tab.nextOffset
+  updateSpotlightTab(pool, bucketKey, (item) => ({ ...item, isLoading: true, loadError: '' }))
+  try {
+    const response = await fetch(`/api/commander-builder-source/${sourceCollectionId.value}/${commanderId.value}/spotlight?scope=${pool}&bucket=${encodeURIComponent(bucketKey)}&offset=${offset}&limit=100`, { headers: { ...authHeaders.value } })
+    const data = await response.json().catch(() => ({}))
+    if (!response.ok || !data.success || !data.bucket || !Array.isArray(data.bucket.entries)) throw new Error(data.error || 'Unable to load commander spotlight cards.')
+    updateSpotlightTab(pool, bucketKey, (item) => {
+      const entries = [...item.entries, ...data.bucket.entries]
+      return { ...item, entries, items: entries.map((entry, index) => overviewEntryToCollectionItem(bucketKey, entry, index)), entryTotal: data.bucket.entry_total, nextOffset: data.bucket.next_offset, hasMore: data.bucket.has_more, isLoading: false, loadError: '' }
+    })
+  } catch (error) {
+    updateSpotlightTab(pool, bucketKey, (item) => ({ ...item, isLoading: false, loadError: error instanceof Error ? error.message : 'Unable to load commander spotlight cards.' }))
+  }
+}
+
+function updateSpotlightTab(pool: SourcePool, tabKey: string, update: (tab: SourceTab) => SourceTab) {
+  spotlightTabsByPool.value = { ...spotlightTabsByPool.value, [pool]: spotlightTabsByPool.value[pool].map((tab) => tab.key === tabKey ? update(tab) : tab) }
+}
+
+async function loadSourcePage(pool: SourcePool, key: string) {
+  if (sourceMode.value === 'spotlight') return loadSpotlightPage(pool, key)
+  return loadSectionPage(pool, key)
+}
+
+async function selectSourceMode(mode: SourceMode) {
+  if (sourceMode.value === mode) return
+  sourceMode.value = mode
+  if (mode === 'spotlight' && spotlightTabsByPool.value[selectedSourcePool.value].length === 0) await loadSpotlightMetadata(selectedSourcePool.value)
+  const tab = sourceTabs.value.find((item) => item.key === activeSourceTabKey.value) ?? sourceTabs.value[0]
+  activeSourceTabKey.value = tab?.key ?? 'ramp'
+  if (tab) await loadSourcePage(selectedSourcePool.value, tab.key)
+}
+
+async function selectSourcePool(pool: SourcePool) {
+  if (selectedSourcePool.value === pool) return
+  sourcePoolError.value = ''
+  if (pool === 'all') isLoadingAllSource.value = true
+  try {
+    if (sourceTabsByPool.value[pool].length === 0) await loadSourceMetadata(pool)
+    if (sourceMode.value === 'spotlight' && spotlightTabsByPool.value[pool].length === 0) await loadSpotlightMetadata(pool)
+    selectedSourcePool.value = pool
+    const tab = sourceTabs.value.find((item) => item.key === activeSourceTabKey.value) ?? sourceTabs.value[0]
+    activeSourceTabKey.value = tab?.key ?? 'ramp'
+    if (tab) await loadSourcePage(pool, tab.key)
+  } catch (error) {
+    sourcePoolError.value = error instanceof Error ? error.message : 'Unable to load this source pool.'
+  } finally {
+    isLoadingAllSource.value = false
+  }
+}
+
+async function loadBuilderScores(collection: CollectionRecord) {
+  const oracleIds = Array.from(new Set(collection.items.map((item) => item.oracle_id).filter((id): id is string => Boolean(id))))
+  if (oracleIds.length === 0) return
+  try {
+    const response = await fetch(
+      `/api/commander-builder-source/${sourceCollectionId.value}/${commanderId.value}/scores`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders.value },
+        body: JSON.stringify({ oracle_ids: oracleIds }),
+      },
+    )
+    const data = await response.json().catch(() => ({}))
+    if (!response.ok || !data.success || !data.scores) return
+    builderScoresByOracleId.value = data.scores as Record<string, SourceOverviewEntry>
+  } catch {
+    // Deck mutations must remain successful when optional score hydration is unavailable.
+  }
 }
 
 async function loadBuilderPage() {
@@ -680,10 +790,7 @@ async function loadBuilderPage() {
       loadThemeProfile(),
     ])
 
-    sourceCollection.value =
-      await enrichCollectionWithGameplay(
-        rawSourceCollection,
-      )
+    sourceCollection.value = rawSourceCollection
 
     builderCollection.value =
       await enrichCollectionWithGameplay(
@@ -693,11 +800,10 @@ async function loadBuilderPage() {
     activeTheme.value =
       selectedTheme
 
-    await loadSourceOverview()
-
-    activeSourceTabKey.value =
-      sourceTabs.value[0]?.key ??
-      'ramp'
+    await loadSourceMetadata('collection')
+    activeSourceTabKey.value = sourceTabs.value[0]?.key ?? 'ramp'
+    if (activeSourceTabKey.value) await loadSourcePage('collection', activeSourceTabKey.value)
+    await loadBuilderScores(builderCollection.value)
 
     viewMode.value =
       builderCollection.value.deck_type.toLowerCase() ===
@@ -754,10 +860,31 @@ function handleHoverItem(
   hoveredItem.value = item
 }
 
-function handleSourceHoverItem(
-  item: CollectionItem | null,
-) {
+async function handleSourceHoverItem(item: CollectionItem | null) {
   hoveredSourceItem.value = item
+  if (!item?.oracle_id || item.gameplay_card) return
+  try {
+    const response = await fetch(`/api/cards/id/${item.oracle_id}`)
+    if (!response.ok) return
+    const gameplayCard = await response.json() as GameplayCard
+    for (const pool of ['collection', 'all'] as SourcePool[]) {
+      sourceTabsByPool.value[pool].forEach((tab) => {
+        tab.items.forEach((sourceItem) => {
+          if (sourceItem.oracle_id === gameplayCard.oracle_id) {
+            Object.assign(sourceItem, buildItemMetadata(gameplayCard))
+          }
+        })
+      })
+    }
+    if (hoveredSourceItem.value?.oracle_id === gameplayCard.oracle_id) {
+      hoveredSourceItem.value = {
+        ...hoveredSourceItem.value,
+        ...buildItemMetadata(gameplayCard),
+      }
+    }
+  } catch {
+    // A row remains usable even when its optional hover details cannot be fetched.
+  }
 }
 
 function handleContextMenu(
@@ -843,6 +970,7 @@ async function assignBuilderCollection(
       mergedCollection,
       currentCollection,
     )
+  await loadBuilderScores(builderCollection.value)
 
   if (focusedItemId !== undefined) {
     hoveredItem.value =
@@ -1422,6 +1550,34 @@ watch(filterText, () => {
                 </p>
               </div>
 
+              <div class="card-pool-toggle" role="group" aria-label="Source pool">
+                <button
+                  class="card-pool-button"
+                  :class="{ active: selectedSourcePool === 'collection' }"
+                  type="button"
+                  :aria-pressed="selectedSourcePool === 'collection'"
+                  :disabled="isLoadingAllSource"
+                  @click="selectSourcePool('collection')"
+                >
+                  My Collection
+                </button>
+                <button
+                  class="card-pool-button"
+                  :class="{ active: selectedSourcePool === 'all' }"
+                  type="button"
+                  :aria-pressed="selectedSourcePool === 'all'"
+                  :disabled="isLoadingAllSource"
+                  @click="selectSourcePool('all')"
+                >
+                  {{ isLoadingAllSource ? 'Loading All Cards…' : 'All Cards / Upgrades' }}
+                </button>
+              </div>
+              <p v-if="sourcePoolError" class="source-pool-error">{{ sourcePoolError }}</p>
+              <div class="source-mode-toggle" role="group" aria-label="Source view">
+                <button class="card-pool-button" :class="{ active: sourceMode === 'sections' }" type="button" @click="selectSourceMode('sections')">Role Sections</button>
+                <button class="card-pool-button" :class="{ active: sourceMode === 'spotlight' }" type="button" @click="selectSourceMode('spotlight')">Commander Spotlight</button>
+              </div>
+
               <div class="tab-row">
                 <button
                   v-for="tab in sourceTabs"
@@ -1434,14 +1590,14 @@ watch(filterText, () => {
                       tab.key,
                   }"
                   @click="
-                    activeSourceTabKey =
-                      tab.key
+                    activeSourceTabKey = tab.key;
+                    loadSourcePage(selectedSourcePool, tab.key)
                   "
                 >
                   {{ tab.title }}
 
                   <span>
-                    {{ tab.totalCards }}
+                    {{ tab.entryTotal }}
                   </span>
                 </button>
               </div>
@@ -1450,33 +1606,20 @@ watch(filterText, () => {
             <div class="pane-content">
               <CommanderBuilderSourceList
                 v-if="activeSourceTab"
-                :title="
-                  activeSourceTab.title
-                "
-                :eyebrow="
-                  activeSourceTab.key
-                "
-                :description="
-                  activeSourceTab.description
-                "
-                :items="
-                  activeSourceTab.items
-                "
-                :primary-action-disabled="
-                  isAddingSourceCard
-                "
-                @hover-item="
-                  handleSourceHoverItem
-                "
-                @card-click="
-                  handleSectionCardClick
-                "
-                @primary-action="
-                  addSourceItemToBuilder
-                "
-                @context-menu="
-                  handleContextMenu
-                "
+                :title="activeSourceTab.title"
+                :eyebrow="sourceMode === 'spotlight' ? 'Commander Support' : activeSourceTab.key"
+                :description="activeSourceTab.description"
+                :items="activeSourceTab.items"
+                :total-items="activeSourceTab.entryTotal"
+                :has-more="activeSourceTab.hasMore"
+                :is-loading="activeSourceTab.isLoading"
+                :load-error="activeSourceTab.loadError"
+                :primary-action-disabled="isAddingSourceCard"
+                @hover-item="handleSourceHoverItem"
+                @card-click="handleSectionCardClick"
+                @primary-action="addSourceItemToBuilder"
+                @context-menu="handleContextMenu"
+                @load-more="loadSourcePage(selectedSourcePool, activeSourceTab.key)"
               />
             </div>
           </section>
@@ -1918,6 +2061,35 @@ watch(filterText, () => {
 
   overflow: visible;
 }
+
+.source-mode-toggle { display: flex; flex-wrap: wrap; gap: 8px; }
+
+.card-pool-toggle {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.card-pool-button {
+  padding: 8px 10px;
+  border: 1px solid var(--surface-border-light);
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.76);
+  color: var(--text-main);
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.card-pool-button.active {
+  border-color: var(--accent-electric-border);
+  background: var(--accent-electric-dim);
+  color: var(--accent-electric);
+}
+
+.card-pool-button:disabled { cursor: wait; opacity: 0.7; }
+.source-pool-error { margin: 0; color: var(--error-text); font-size: 0.84rem; }
 
 /* ----------------------------------------
    Source tabs

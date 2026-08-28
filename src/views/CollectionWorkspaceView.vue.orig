@@ -17,7 +17,6 @@ import type {
 import { useAuthStore } from '@/stores/authStore'
 import type { GameplayCard } from '@/types/gameplayCard'
 import { collectionFacetOptions, matchesCollectionFacets, type CollectionFacetFilters } from '@/components/collection/filtering'
-import { formatCollectionExport, type CollectionExportOptions } from '@/components/collection/exporting'
 
 const CommanderWorkspace = defineAsyncComponent(() => import('@/components/collection/CommanderWorkspace.vue'))
 const StandardWorkspace = defineAsyncComponent(() => import('@/components/collection/StandardWorkspace.vue'))
@@ -36,13 +35,6 @@ const colorFilters = ref<string[]>([])
 const supertypeFilters = ref<string[]>([])
 const cardTypeFilters = ref<string[]>([])
 const subtypeFilters = ref<string[]>([])
-const exportOptions = ref<CollectionExportOptions>({
-  includeSectionHeaders: false,
-  includeSetCode: false,
-  includeCollectorNumber: false,
-  includeColorTags: false,
-})
-const exportMessage = ref('')
 const addCardQuery = ref('')
 const addCardSuggestions = ref<CollectionCardSearchResult[]>([])
 const isSearchingCards = ref(false)
@@ -60,79 +52,7 @@ const addCardZone = computed(() => 'mainboard')
 const isMasterCollectionRoute = computed(() => collectionId.value === 'master')
 const isReadOnlyCollection = computed(() => collection.value?.is_read_only === true)
 
-const collectionFacetFilters = computed<CollectionFacetFilters>(() => ({
-  colors: colorFilters.value,
-  supertypes: supertypeFilters.value,
-  cardTypes: cardTypeFilters.value,
-  subtypes: subtypeFilters.value,
-}))
 
-const facetOptions = computed(() => collectionFacetOptions(collection.value?.items ?? []))
-
-const filteredCollection = computed<CollectionRecord | null>(() => {
-  if (!collection.value) {
-    return null
-  }
-
-  const query = filterText.value.trim().toLowerCase()
-
-  return {
-    ...collection.value,
-    items: collection.value.items.filter((item) => {
-      const haystack = [
-        item.name ?? '',
-        item.set_code ?? '',
-        item.collector_number ?? '',
-        item.lang ?? '',
-        item.zone ?? '',
-        ...(item.categories ?? []).map((category) => category.name),
-        ...(item.archetypes ?? []).map((archetype) => archetype.name),
-      ].join(' ').toLowerCase()
-
-      return haystack.includes(query) && matchesCollectionFacets(item, collectionFacetFilters.value)
-    }),
-  }
-})
-
-
-const filteredCardCopies = computed(() => (
-  filteredCollection.value?.items.reduce((total, item) => total + item.amount, 0) ?? 0
-))
-
-const exportText = computed(() => formatCollectionExport(
-  filteredCollection.value?.items ?? [],
-  exportOptions.value,
-))
-
-function exportFilename() {
-  const name = (collection.value?.name ?? "collection")
-    .trim()
-    .replace(/[^a-z0-9]+/gi, "-")
-    .replace(/-$|^-/g, "")
-  return (name || "collection") + "-export.txt"
-}
-
-async function copyExport() {
-  exportMessage.value = ''
-  try {
-    await navigator.clipboard.writeText(exportText.value)
-    exportMessage.value = 'Export copied to clipboard.'
-  } catch {
-    exportMessage.value = 'Could not copy the export. Use Download TXT instead.'
-  }
-}
-
-function downloadExport() {
-  const blob = new Blob([exportText.value], { type: 'text/plain;charset=utf-8' })
-  const url = window.URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = exportFilename()
-  document.body.appendChild(link)
-  link.click()
-  document.body.removeChild(link)
-  window.URL.revokeObjectURL(url)
-}
 
 const workspaceComponent = computed(() => {
   const deckType = collection.value?.deck_type.toLowerCase()
@@ -537,12 +457,6 @@ watch(viewMode, (mode) => {
   closeContextMenu()
 })
 
-watch(() => exportOptions.value.includeSetCode, (includeSetCode) => {
-  if (!includeSetCode) {
-    exportOptions.value.includeCollectorNumber = false
-  }
-})
-
 watch([filterText, colorFilters, supertypeFilters, cardTypeFilters, subtypeFilters], () => {
   hoveredItem.value = null
   closeContextMenu()
@@ -602,39 +516,14 @@ watch(addCardQuery, (value) => {
           v-model="viewMode"
           v-model:organization-mode="organizationMode"
           v-model:filter-text="filterText"
-          v-model:color-filters="colorFilters"
-          v-model:supertype-filters="supertypeFilters"
-          v-model:card-type-filters="cardTypeFilters"
-          v-model:subtype-filters="subtypeFilters"
           v-model:add-card-query="addCardQuery"
           :collection="collection"
-          :supertype-options="facetOptions.supertypes"
-          :card-type-options="facetOptions.cardTypes"
-          :subtype-options="facetOptions.subtypes"
           :add-card-suggestions="addCardSuggestions"
           :add-card-loading="isSearchingCards"
           :add-card-disabled="isAddingCard || isReadOnlyCollection"
           @select-add-card-suggestion="addSuggestedCard"
           @dismiss-add-card-suggestions="dismissAddCardSuggestions"
         />
-        <section class="export-panel">
-          <div>
-            <span class="export-title">Export filtered cards</span>
-            <span class="export-count">{{ filteredCardCopies }} cards across {{ filteredCollection.items.length }} entries</span>
-          </div>
-          <div class="export-options">
-            <label><input v-model="exportOptions.includeSectionHeaders" type="checkbox"> Generic section headers</label>
-            <label><input v-model="exportOptions.includeSetCode" type="checkbox"> Set code</label>
-            <label><input v-model="exportOptions.includeCollectorNumber" type="checkbox" :disabled="!exportOptions.includeSetCode"> Collector number</label>
-            <label><input v-model="exportOptions.includeColorTags" type="checkbox"> Color tags</label>
-          </div>
-          <div class="export-actions">
-            <button type="button" :disabled="!exportText" @click="copyExport">Copy export</button>
-            <button type="button" :disabled="!exportText" @click="downloadExport">Download TXT</button>
-            <span v-if="exportMessage" class="export-message">{{ exportMessage }}</span>
-          </div>
-        </section>
-
         <CollectionManaCurve v-if="shouldShowManaCurve" :collection="collection" />
 
         <div v-if="filteredCollection.items.length === 0" class="state-panel">
@@ -708,61 +597,6 @@ watch(addCardQuery, (value) => {
   grid-template-columns: minmax(0, 1fr) 320px;
   gap: 18px;
   align-items: start;
-}
-
-.export-panel {
-  display: grid;
-  gap: 12px;
-  padding: 16px 18px;
-  border: 1px solid var(--surface-border-light);
-  border-radius: 16px;
-  background: var(--surface-card);
-}
-
-.export-title {
-  color: var(--text-light);
-  font-weight: 800;
-}
-
-.export-count,
-.export-message {
-  margin-left: 10px;
-  color: var(--text-muted);
-  font-size: 0.9rem;
-}
-
-.export-options,
-.export-actions {
-  display: flex;
-  gap: 14px;
-  flex-wrap: wrap;
-  align-items: center;
-}
-
-.export-options label {
-  color: var(--text-main);
-  font-size: 0.9rem;
-}
-
-.export-options input {
-  margin-right: 6px;
-  accent-color: var(--accent-electric);
-}
-
-.export-actions button {
-  padding: 9px 13px;
-  border: 1px solid var(--surface-border-light);
-  border-radius: 10px;
-  background: var(--surface-hover);
-  color: var(--text-main);
-  font: inherit;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.export-actions button:disabled {
-  cursor: not-allowed;
-  opacity: 0.5;
 }
 
 .context-menu {
