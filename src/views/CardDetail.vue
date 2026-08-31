@@ -59,7 +59,8 @@ async function fetchLocalPrice(cardName: string) {
   priceData.value = null
   
   try {
-    const response = await fetch(`/api/scrape-price?name=${encodeURIComponent(cardName)}`)
+    const params = new URLSearchParams({ name: cardName, oracle_id: oracleId.value })
+    const response = await fetch(`/api/scrape-price?${params.toString()}`)
     
     if (!response.ok) {
       throw new Error(`Scraper responded with status code: ${response.status}`)

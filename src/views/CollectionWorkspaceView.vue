@@ -6,11 +6,14 @@ import CollectionHeader from '@/components/collection/CollectionHeader.vue'
 import CollectionHoverPreview from '@/components/collection/CollectionHoverPreview.vue'
 import CollectionManaCurve from '@/components/collection/CollectionManaCurve.vue'
 import CollectionToolbar from '@/components/collection/CollectionToolbar.vue'
+import CommanderDeckTemplate from '@/components/collection/CommanderDeckTemplate.vue'
 import type {
+  CommanderWorkspaceMode,
   CollectionCardContextMenuPayload,
   CollectionCardSearchResult,
   CollectionItem,
   CollectionRecord,
+  DeckLegalityResult,
   WorkspaceOrganizationMode,
   WorkspaceViewMode,
 } from '@/components/collection/types'
@@ -49,9 +52,13 @@ const isSearchingCards = ref(false)
 const isAddingCard = ref(false)
 const viewMode = ref<WorkspaceViewMode>('list')
 const organizationMode = ref<WorkspaceOrganizationMode>('section')
+const commanderWorkspaceMode = ref<CommanderWorkspaceMode>('normal')
 const hoveredItem = ref<CollectionItem | null>(null)
 const contextMenuState = ref<CollectionCardContextMenuPayload | null>(null)
 const mutatingItemIds = ref<Array<string | number>>([])
+const isMutatingCommander = ref(false)
+const isValidatingDeck = ref(false)
+const deckLegalityResult = ref<DeckLegalityResult | null>(null)
 let addCardSearchTimeout: ReturnType<typeof window.setTimeout> | null = null
 let latestAddCardSearchRequest = 0
 
@@ -59,6 +66,13 @@ const collectionId = computed(() => String(route.params.collectionId ?? ''))
 const addCardZone = computed(() => 'mainboard')
 const isMasterCollectionRoute = computed(() => collectionId.value === 'master')
 const isReadOnlyCollection = computed(() => collection.value?.is_read_only === true)
+const commanderItems = computed(() => collection.value?.items.filter((item) => item.zone === 'commander') ?? [])
+const isCommanderTemplateMode = computed(() => collection.value?.deck_type.toLowerCase() === 'commander' && commanderWorkspaceMode.value === 'template')
+const deckValueUsd = computed(() => (
+  collection.value?.items.reduce((total, item) => (
+    total + (item.gameplay_card?.lowest_price_usd ?? 0) * item.amount
+  ), 0) ?? 0
+))
 
 const collectionFacetFilters = computed<CollectionFacetFilters>(() => ({
   colors: colorFilters.value,
@@ -147,6 +161,11 @@ const workspaceComponent = computed(() => {
 
 const showCommanderBuilderAction = computed(() => (
   collection.value?.deck_type.toLowerCase() === 'binder'
+))
+const showCommanderBuilderResumeAction = computed(() => (
+  collection.value?.deck_type.toLowerCase() === 'commander'
+  && !isReadOnlyCollection.value
+  && Boolean(collection.value.commander_oracle_id)
 ))
 const showMasterSearchAction = computed(() => collection.value?.is_virtual === true)
 const shouldShowManaCurve = computed(() => {
@@ -301,13 +320,47 @@ async function loadCollection() {
 
     const loadedCollection = data.collection as CollectionRecord
     collection.value = await enrichCollectionWithGameplay(loadedCollection)
+    deckLegalityResult.value = null
     hoveredItem.value = null
     organizationMode.value = 'section'
+    commanderWorkspaceMode.value = 'normal'
     viewMode.value = collection.value.deck_type.toLowerCase() === 'binder' ? 'list' : 'grid'
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : 'Unable to load collection workspace.'
   } finally {
     isLoading.value = false
+  }
+}
+
+async function validateDeck() {
+  if (!collection.value || isValidatingDeck.value) {
+    return
+  }
+
+  isValidatingDeck.value = true
+  errorMessage.value = ''
+
+  try {
+    const response = await fetch(`/api/collections/${collection.value.id}/validate-legality`, {
+      method: 'POST',
+      headers: { ...authHeaders.value },
+    })
+    const data = await response.json().catch(() => ({}))
+
+    if (response.status === 401) {
+      authStore.logout()
+      router.replace({ name: 'login', query: { redirect: route.fullPath } })
+      return
+    }
+    if (!response.ok || !data.success || !data.validation) {
+      throw new Error(data.error || 'Unable to validate this deck.')
+    }
+
+    deckLegalityResult.value = data.validation as DeckLegalityResult
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : 'Unable to validate this deck.'
+  } finally {
+    isValidatingDeck.value = false
   }
 }
 
@@ -374,6 +427,7 @@ async function mutateItemQuantity(item: CollectionItem, direction: 'increment' |
 
     const updatedCollection = mergeCollectionMetadata(data.collection as CollectionRecord)
     collection.value = updatedCollection
+    deckLegalityResult.value = null
 
     hoveredItem.value = updatedCollection.items.find((candidate) => candidate.id === item.id) ?? null
   } catch (error) {
@@ -456,6 +510,7 @@ async function addSuggestedCard(suggestion: CollectionCardSearchResult) {
 
     const mergedCollection = mergeCollectionMetadata(data.collection as CollectionRecord)
     collection.value = await enrichCollectionWithGameplay(mergedCollection, collection.value)
+    deckLegalityResult.value = null
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : 'Unable to add card to collection.'
   } finally {
@@ -486,6 +541,48 @@ function openCardDetails() {
   closeContextMenu()
 }
 
+
+
+async function mutateCommander(item: CollectionItem, action: 'set' | 'remove') {
+  if (!collection.value || isReadOnlyCollection.value || isMutatingCommander.value) {
+    return
+  }
+
+  isMutatingCommander.value = true
+  errorMessage.value = ''
+  closeContextMenu()
+
+  try {
+    const response = action === 'set'
+      ? await fetch(`/api/collections/${collection.value.id}/commander`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...authHeaders.value },
+          body: JSON.stringify({ item_id: item.id }),
+        })
+      : await fetch(`/api/collections/${collection.value.id}/commander/${item.id}`, {
+          method: 'DELETE',
+          headers: { ...authHeaders.value },
+        })
+    const data = await response.json().catch(() => ({}))
+
+    if (response.status === 401) {
+      authStore.logout()
+      router.replace({ name: 'login', query: { redirect: route.fullPath } })
+      return
+    }
+    if (!response.ok || !data.success || !data.collection) {
+      throw new Error(data.error || 'Unable to update commander.')
+    }
+
+    const updated = mergeCollectionMetadata(data.collection as CollectionRecord)
+    collection.value = await enrichCollectionWithGameplay(updated, collection.value)
+    deckLegalityResult.value = null
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : 'Unable to update commander.'
+  } finally {
+    isMutatingCommander.value = false
+  }
+}
 function handleGlobalPointer() {
   closeContextMenu()
 }
@@ -504,6 +601,22 @@ function goToCommanderBuilder() {
   router.push({
     name: 'collection-possible-commanders',
     params: { collectionId: String(collection.value.id) },
+  })
+}
+
+function reopenCommanderBuilder() {
+  if (!collection.value?.commander_oracle_id) {
+    return
+  }
+
+  router.push({
+    name: 'commander-builder',
+    params: {
+      collectionId: collection.value.builder_source_collection_id ?? 'master',
+      commanderId: collection.value.commander_oracle_id,
+      themeId: collection.value.builder_theme_id ?? -1,
+      builderCollectionId: collection.value.id,
+    },
   })
 }
 
@@ -593,13 +706,21 @@ watch(addCardQuery, (value) => {
       <template v-else-if="collection && filteredCollection">
         <CollectionHeader
           :collection="collection"
+          :deck-value-usd="deckValueUsd"
+          :legality-result="deckLegalityResult"
+          :is-validating-deck="isValidatingDeck"
+          :show-deck-metrics="true"
           :show-commander-builder-action="showCommanderBuilderAction"
+          :show-commander-builder-resume-action="showCommanderBuilderResumeAction"
           :show-master-search-action="showMasterSearchAction"
           @create-commander-deck="goToCommanderBuilder"
+          @open-commander-builder="reopenCommanderBuilder"
           @search-master-collection="goToMasterAdvancedSearch"
+          @validate-deck="validateDeck"
         />
         <CollectionToolbar
           v-model="viewMode"
+          v-model:commander-workspace-mode="commanderWorkspaceMode"
           v-model:organization-mode="organizationMode"
           v-model:filter-text="filterText"
           v-model:color-filters="colorFilters"
@@ -637,10 +758,17 @@ watch(addCardQuery, (value) => {
 
         <CollectionManaCurve v-if="shouldShowManaCurve" :collection="collection" />
 
-        <div v-if="filteredCollection.items.length === 0" class="state-panel">
+        <div v-if="filteredCollection.items.length === 0 && !isCommanderTemplateMode" class="state-panel">
           <h2>No cards match this filter</h2>
           <p>Try a different local filter or clear the current search.</p>
         </div>
+
+        <div v-else-if="isCommanderTemplateMode && viewMode === 'list'" class="workspace-content-grid">
+          <CommanderDeckTemplate :collection="filteredCollection" :commander-items="commanderItems" :view-mode="viewMode" :mutating-item-ids="mutatingItemIds" :show-quantity-actions="!isReadOnlyCollection" @hover-item="handleHoverItem" @context-menu="handleContextMenu" @increment-item="mutateItemQuantity($event, 'increment')" @decrement-item="mutateItemQuantity($event, 'decrement')" />
+          <CollectionHoverPreview :item="hoveredItem" />
+        </div>
+
+        <CommanderDeckTemplate v-else-if="isCommanderTemplateMode" :collection="filteredCollection" :commander-items="commanderItems" :view-mode="viewMode" :mutating-item-ids="mutatingItemIds" :show-quantity-actions="!isReadOnlyCollection" @context-menu="handleContextMenu" @increment-item="mutateItemQuantity($event, 'increment')" @decrement-item="mutateItemQuantity($event, 'decrement')" />
 
         <div v-else-if="viewMode === 'list'" class="workspace-content-grid">
           <component
@@ -684,6 +812,15 @@ watch(addCardQuery, (value) => {
             @click="openCardDetails"
           >
             Show card details
+          </button>
+          <button
+            v-if="collection?.deck_type.toLowerCase() === 'commander' && !isReadOnlyCollection"
+            class="context-menu-action"
+            type="button"
+            :disabled="isMutatingCommander"
+            @click="mutateCommander(contextMenuState.item, contextMenuState.item.zone === 'commander' ? 'remove' : 'set')"
+          >
+            {{ contextMenuState.item.zone === 'commander' ? 'Remove as commander' : 'Set as commander' }}
           </button>
         </div>
       </template>

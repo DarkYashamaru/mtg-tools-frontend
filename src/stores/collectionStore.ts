@@ -39,9 +39,11 @@ export const useCollectionStore = defineStore('collection', () => {
   const collection = ref<Card[]>([])
   const selectedCommanderId = ref<string | null>(initialCommanderId())
   const selectedTheme = ref<any | null>(null)
+  const validCommanderOracleIds = ref<string[]>([])
 
   function setCollection(newCollection: Card[]) {
     collection.value = Array.isArray(newCollection) ? dedupeGameplayCards(newCollection) : []
+    validCommanderOracleIds.value = []
   }
 
   function selectCommander(oracleId: string | null) {
@@ -58,12 +60,13 @@ export const useCollectionStore = defineStore('collection', () => {
     selectedTheme.value = theme
   }
 
-  const validCommanders = computed(() => {
-    if (!Array.isArray(collection.value)) return []
-    return collection.value.filter(card =>
-      card?.commander_legal && card.faces?.some(f => f?.supertypes?.includes('Legendary') && f?.card_types?.includes('Creature'))
-    )
-  })
+  function setValidCommanderOracleIds(oracleIds: string[]) {
+    validCommanderOracleIds.value = Array.from(new Set(oracleIds))
+  }
+
+  const validCommanders = computed(() => (
+    collection.value.filter((card) => validCommanderOracleIds.value.includes(card.oracle_id))
+  ))
 
   const selectedCommanderData = computed(() => {
     if (!selectedCommanderId.value || !Array.isArray(validCommanders.value)) return null
@@ -111,6 +114,7 @@ export const useCollectionStore = defineStore('collection', () => {
     collection.value = []
     selectedCommanderId.value = null
     selectedTheme.value = null
+    validCommanderOracleIds.value = []
     clearLegacyCollectionCache()
     try {
       sessionStorage.removeItem('mtg_selected_commander_id')
@@ -123,12 +127,14 @@ export const useCollectionStore = defineStore('collection', () => {
     collection,
     selectedCommanderId,
     selectedTheme,
+    validCommanderOracleIds,
     validCommanders,
     selectedCommanderData,
     selectedCommanderThemes,
     setCollection,
     selectCommander,
     setSelectedTheme,
+    setValidCommanderOracleIds,
     clearStore,
   }
 })

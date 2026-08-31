@@ -61,6 +61,8 @@ export interface GameplayCard {
   owned_amount?: number
   owned_print_count?: number
   owned_collection_count?: number
+  lowest_price_usd?: number | null
+  dracostore_price_cop?: number | null
   ownership_sources?: Array<{
     collection_id: number
     collection_name: string

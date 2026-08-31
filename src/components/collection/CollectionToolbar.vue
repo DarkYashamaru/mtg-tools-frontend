@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { COLOR_FILTER_OPTIONS } from './filtering'
 import type {
   CollectionCardSearchResult,
+  CommanderWorkspaceMode,
   CollectionRecord,
   WorkspaceOrganizationMode,
   WorkspaceViewMode,
@@ -11,6 +12,7 @@ import type {
 interface Props {
   collection: CollectionRecord
   modelValue: WorkspaceViewMode
+  commanderWorkspaceMode?: CommanderWorkspaceMode
   organizationMode: WorkspaceOrganizationMode
   filterText: string
   colorFilters?: string[]
@@ -28,9 +30,11 @@ interface Props {
 
 const props = withDefaults(defineProps<Props>(), {
   addCardDisabled: false,
+  commanderWorkspaceMode: 'normal',
 })
 const emit = defineEmits<{
   'update:modelValue': [value: WorkspaceViewMode]
+  'update:commanderWorkspaceMode': [value: CommanderWorkspaceMode]
   'update:organizationMode': [value: WorkspaceOrganizationMode]
   'update:filterText': [value: string]
   'update:colorFilters': [value: string[]]
@@ -69,6 +73,10 @@ const shouldShowEmptyState = computed(() => (
 
 function setViewMode(value: WorkspaceViewMode) {
   emit('update:modelValue', value)
+}
+
+function setCommanderWorkspaceMode(value: CommanderWorkspaceMode) {
+  emit('update:commanderWorkspaceMode', value)
 }
 
 function setOrganizationMode(value: WorkspaceOrganizationMode) {
@@ -258,6 +266,14 @@ watch(
           >
             List
           </button>
+        </div>
+      </div>
+
+      <div v-if="lowerDeckType === 'commander'" class="control-block">
+        <span class="control-label">Workspace</span>
+        <div class="segmented">
+          <button type="button" class="segment" :class="{ active: commanderWorkspaceMode === 'normal' }" @click="setCommanderWorkspaceMode('normal')">Normal</button>
+          <button type="button" class="segment" :class="{ active: commanderWorkspaceMode === 'template' }" @click="setCommanderWorkspaceMode('template')">Template</button>
         </div>
       </div>
 

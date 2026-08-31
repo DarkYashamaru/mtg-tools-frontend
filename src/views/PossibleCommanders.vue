@@ -126,6 +126,25 @@ const commanderItems = computed<CollectionItem[]>(() => (
   }))
 ))
 
+
+
+async function loadValidatedCommanderCandidates(cards: GameplayCard[]) {
+  const response = await fetch('/api/commanders/validate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ selections: cards.map((card) => [card.oracle_id]) }),
+  })
+  const data = await response.json().catch(() => ({}))
+  if (!response.ok || !data.success || !Array.isArray(data.results)) {
+    throw new Error(data.error || 'Unable to validate commander candidates.')
+  }
+
+  store.setValidCommanderOracleIds(
+    data.results
+      .filter((result: { valid?: boolean; oracle_ids?: string[] }) => result.valid)
+      .flatMap((result: { oracle_ids?: string[] }) => result.oracle_ids ?? [])
+  )
+}
 async function loadCollectionFromBackend(collectionId: string) {
   isLoading.value = true
   errorMessage.value = ''
@@ -139,6 +158,7 @@ async function loadCollectionFromBackend(collectionId: string) {
       router,
     })
     store.setCollection(cards)
+    await loadValidatedCommanderCandidates(cards)
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : 'Unable to load collection data.'
   } finally {
@@ -180,6 +200,8 @@ function goBackToImporter() {
 onMounted(() => {
   if (activeCollectionId.value) {
     loadCollectionFromBackend(activeCollectionId.value)
+  } else if (collection.value.length > 0) {
+    void loadValidatedCommanderCandidates(collection.value)
   }
 })
 </script>

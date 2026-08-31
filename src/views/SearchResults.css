@@ -137,6 +137,33 @@
   border: 1px solid var(--surface-border-light);
 }
 
+.card-price-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.price-badge {
+  align-self: flex-start;
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 12px;
+  border: 1px solid var(--surface-border-light);
+}
+
+.scryfall-price {
+  color: #b9e6ff;
+  background: rgba(56, 189, 248, 0.12);
+  border-color: var(--accent-electric-border);
+}
+
+.draco-price {
+  color: #f7d28d;
+  background: rgba(245, 158, 11, 0.12);
+  border-color: rgba(245, 158, 11, 0.35);
+}
+
 /* Skeleton Rendering Animations */
 .skeleton { pointer-events: none; }
 .skeleton-img {

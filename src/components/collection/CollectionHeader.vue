@@ -1,20 +1,32 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { CollectionRecord } from './types'
+import type { CollectionRecord, DeckLegalityResult } from './types'
 
 interface Props {
   collection: CollectionRecord
+  deckValueUsd?: number
+  legalityResult?: DeckLegalityResult | null
+  isValidatingDeck?: boolean
+  showDeckMetrics?: boolean
   showCommanderBuilderAction?: boolean
+  showCommanderBuilderResumeAction?: boolean
   showMasterSearchAction?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
   showCommanderBuilderAction: false,
+  showCommanderBuilderResumeAction: false,
   showMasterSearchAction: false,
+  deckValueUsd: 0,
+  legalityResult: null,
+  isValidatingDeck: false,
+  showDeckMetrics: false,
 })
 defineEmits<{
   createCommanderDeck: []
+  openCommanderBuilder: []
   searchMasterCollection: []
+  validateDeck: []
 }>()
 
 const commanderCards = computed(() => props.collection.commander_cards ?? [])
@@ -59,6 +71,12 @@ function collectionSubtitle(collection: CollectionRecord) {
 
   return 'Binder collection'
 }
+
+const isCommanderDeck = computed(() => props.collection.deck_type.toLowerCase() === 'commander')
+const formattedDeckValue = computed(() => new Intl.NumberFormat('en-US', {
+  style: 'currency',
+  currency: 'USD',
+}).format(props.deckValueUsd ?? 0))
 </script>
 
 <template>
@@ -89,9 +107,36 @@ function collectionSubtitle(collection: CollectionRecord) {
         <span v-if="commanderLabel" class="meta-pill commander-pill">{{ commanderLabel }}</span>
       </div>
 
-      <div v-if="showCommanderBuilderAction || showMasterSearchAction" class="action-row">
+      <div v-if="isCommanderDeck && showDeckMetrics" class="deck-metrics">
+        <span class="metric-label">Deck value</span>
+        <strong>{{ formattedDeckValue }} USD</strong>
+        <button class="secondary-action" type="button" :disabled="isValidatingDeck" @click="$emit('validateDeck')">
+          {{ isValidatingDeck ? 'Validating…' : 'Validate deck' }}
+        </button>
+      </div>
+
+      <div v-if="legalityResult" class="legality-result" :class="legalityResult.legal ? 'is-legal' : 'is-illegal'">
+        <strong>{{ legalityResult.legal ? 'Commander deck is legal.' : 'Commander deck is not legal.' }}</strong>
+        <ul v-if="!legalityResult.legal">
+          <li v-if="!legalityResult.checks.card_count.valid">
+            {{ legalityResult.checks.card_count.actual }} of {{ legalityResult.checks.card_count.required }} cards.
+          </li>
+          <li v-if="!legalityResult.checks.commander.valid">Choose a commander to validate color identity.</li>
+          <li v-if="!legalityResult.checks.duplicates.valid">
+            Duplicate nonbasic cards: {{ legalityResult.checks.duplicates.cards.map((card) => `${card.name ?? 'Unknown card'} (${card.copies})`).join(', ') }}.
+          </li>
+          <li v-if="!legalityResult.checks.color_identity.valid && legalityResult.checks.commander.valid">
+            Off-color cards: {{ legalityResult.checks.color_identity.cards.map((card) => `${card.name ?? 'Unknown card'} (${card.colors.join('')})`).join(', ') }}.
+          </li>
+        </ul>
+      </div>
+
+      <div v-if="showCommanderBuilderAction || showCommanderBuilderResumeAction || showMasterSearchAction" class="action-row">
         <button v-if="showCommanderBuilderAction" class="primary-action" type="button" @click="$emit('createCommanderDeck')">
           Create commander deck from collection
+        </button>
+        <button v-if="showCommanderBuilderResumeAction" class="primary-action" type="button" @click="$emit('openCommanderBuilder')">
+          Open Commander Builder
         </button>
         <button v-if="showMasterSearchAction" class="secondary-action" type="button" @click="$emit('searchMasterCollection')">
           Advanced search this pool
@@ -178,6 +223,43 @@ h1 {
   margin-top: 18px;
 }
 
+.deck-metrics {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 18px;
+  color: var(--text-light);
+}
+
+.metric-label {
+  color: var(--text-main);
+  font-size: 0.9rem;
+}
+
+.legality-result {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--surface-border-light);
+  border-radius: 14px;
+  background: rgba(15, 23, 42, 0.72);
+  color: var(--text-light);
+}
+
+.legality-result.is-legal {
+  border-color: rgba(74, 222, 128, 0.6);
+}
+
+.legality-result.is-illegal {
+  border-color: rgba(251, 113, 133, 0.65);
+}
+
+.legality-result ul {
+  margin: 8px 0 0;
+  padding-left: 20px;
+  color: var(--text-main);
+}
+
 .meta-pill {
   padding: 8px 12px;
   border-radius: 999px;
@@ -215,5 +297,10 @@ h1 {
   font-size: 0.95rem;
   font-weight: 800;
   cursor: pointer;
+}
+
+.secondary-action:disabled {
+  cursor: wait;
+  opacity: 0.65;
 }
 </style>

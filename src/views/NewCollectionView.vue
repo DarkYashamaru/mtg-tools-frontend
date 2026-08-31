@@ -20,8 +20,8 @@ const errorMessage = ref('')
 async function submitCollection() {
   errorMessage.value = ''
 
-  if (!deckText.value.trim()) {
-    errorMessage.value = 'Paste a collection list before creating it.'
+  if (!deckText.value.trim() && !collectionName.value.trim()) {
+    errorMessage.value = 'Enter a collection name when creating an empty collection.'
     return
   }
 
@@ -92,7 +92,7 @@ function goBack() {
           <input
             v-model="collectionName"
             type="text"
-            placeholder="Optional. If empty, the backend will infer a name."
+            placeholder="Required when creating an empty collection."
           >
         </label>
 
@@ -130,6 +130,7 @@ function goBack() {
             v-model="deckText"
             placeholder="Commander&#10;1 Sol Ring (CMM) 123&#10;Mainboard&#10;1 Arcane Signet (LCC) 297"
           />
+          <small class="field-hint">Leave this blank to create an empty, named collection and add cards manually later.</small>
         </div>
 
         <div class="format-note">
@@ -255,6 +256,11 @@ h1 {
   font-weight: 700;
 }
 
+.field-hint {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  line-height: 1.45;
+}
 .field input {
   width: 100%;
   padding: 14px 15px;

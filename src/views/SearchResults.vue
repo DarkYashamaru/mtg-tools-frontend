@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import type { LocationQueryValue } from 'vue-router'
 import CardFaceViewer from '@/components/cards/CardFaceViewer.vue'
+import CardPriceBadges from '@/components/cards/CardPriceBadges.vue'
 import { useAuthStore } from '@/stores/authStore'
 import type { GameplayCard } from '@/types/gameplayCard'
 
@@ -14,6 +15,21 @@ const { authHeaders } = storeToRefs(authStore)
 const loading = ref(false)
 const error = ref<string | null>(null)
 const results = ref<GameplayCard[]>([])
+
+
+function ownershipCollections(card: GameplayCard) {
+  const namesById = new Map<number, string>()
+
+  for (const source of card.ownership_sources ?? []) {
+    if (source.collection_name) {
+      namesById.set(source.collection_id, source.collection_name)
+    }
+  }
+
+  return Array.from(namesById, ([id, name]) => ({ id, name })).sort((left, right) =>
+    left.name.localeCompare(right.name)
+  )
+}
 
 function appendValue(
   params: URLSearchParams,
@@ -156,10 +172,22 @@ watch(
 
         <div class="card-info">
           <h3>{{ card.name }}</h3>
-          <span class="cmc-badge">CMC {{ card.cmc }}</span>
+          <div class="card-price-badges">
+            <span class="cmc-badge">CMC {{ card.cmc }}</span>
+            <CardPriceBadges
+              :usd-price="card.lowest_price_usd"
+              :draco-price="card.dracostore_price_cop"
+            />
+          </div>
           <div v-if="card.owned_amount" class="ownership-pills">
             <span class="metadata-pill ownership">Owned {{ card.owned_amount }}x</span>
-            <span class="metadata-pill ownership">Across {{ card.owned_collection_count }} collections</span>
+            <span
+              v-for="collection in ownershipCollections(card)"
+              :key="`collection-${card.oracle_id}-${collection.id}`"
+              class="metadata-pill ownership"
+            >
+              {{ collection.name }}
+            </span>
           </div>
           <div v-if="card.categories.length || card.archetypes.length" class="metadata-pills">
             <span

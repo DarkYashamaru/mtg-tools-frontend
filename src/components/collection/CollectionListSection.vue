@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import CardPriceBadges from '@/components/cards/CardPriceBadges.vue'
 import type { CollectionCardContextMenuPayload, CollectionItem } from './types'
 
 interface Props {
@@ -91,6 +92,7 @@ function isMutating(item: CollectionItem) {
           <span>Set</span>
           <span>No.</span>
           <span>Lang</span>
+          <span>Price</span>
           <span>{{ primaryActionLabel || (showQuantityActions ? 'Adjust' : 'Status') }}</span>
         </div>
 
@@ -113,6 +115,10 @@ function isMutating(item: CollectionItem) {
             <span>{{ item.set_code || '—' }}</span>
             <span>{{ item.collector_number || '—' }}</span>
             <span>{{ item.lang || '—' }}</span>
+            <CardPriceBadges
+              :usd-price="item.gameplay_card?.lowest_price_usd"
+              :draco-price="item.gameplay_card?.dracostore_price_cop"
+            />
             <div class="row-actions">
               <button
                 v-if="primaryActionLabel"
@@ -198,7 +204,7 @@ function isMutating(item: CollectionItem) {
 .table-head,
 .table-row {
   display: grid;
-  grid-template-columns: 90px minmax(0, 1.8fr) 100px 90px 90px 88px;
+  grid-template-columns: 66px minmax(0, 1.5fr) 90px 76px 64px minmax(130px, 1fr) 88px;
   gap: 12px;
   align-items: center;
   padding: 12px 14px;
@@ -206,7 +212,7 @@ function isMutating(item: CollectionItem) {
 
 .table-head.has-score,
 .table-row.has-score {
-  grid-template-columns: 66px 70px minmax(0, 1.8fr) 100px 90px 90px 88px;
+  grid-template-columns: 58px 64px minmax(0, 1.5fr) 90px 76px 64px minmax(130px, 1fr) 88px;
 }
 
 .table-head {
@@ -301,12 +307,12 @@ function isMutating(item: CollectionItem) {
 @media (max-width: 760px) {
   .table-head,
   .table-row {
-    grid-template-columns: 72px minmax(0, 1fr) 72px 76px;
+    grid-template-columns: 58px minmax(0, 1fr) minmax(120px, 1fr) 76px;
   }
 
   .table-head.has-score,
   .table-row.has-score {
-    grid-template-columns: 56px 58px minmax(0, 1fr) 72px 76px;
+    grid-template-columns: 50px 54px minmax(0, 1fr) minmax(120px, 1fr) 76px;
   }
 
   .table-head span:nth-child(4),

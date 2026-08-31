@@ -317,6 +317,8 @@ async function startConstructingDeck() {
         name: `${activeCommander.value.name} ${activeTheme.value.name} Deck`,
         deck_type: 'Commander',
         deck_text: `Commander\n1 ${activeCommander.value.name}`,
+        builder_source_collection_id: activeCollectionId.value,
+        builder_theme_id: activeThemeId.value,
       }),
     })
     const data = await response.json().catch(() => ({}))

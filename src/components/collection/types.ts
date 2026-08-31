@@ -69,6 +69,8 @@ export type CollectionRecord = {
   user_id: number
   name: string
   deck_type: string
+  builder_source_collection_id?: string | null
+  builder_theme_id?: number | null
   commander_cards?: CollectionCommanderCard[]
   commander_card_id: string | null
   commander_oracle_id: string | null
@@ -81,8 +83,25 @@ export type CollectionRecord = {
   items: CollectionItem[]
 }
 
+export type DeckLegalityResult = {
+  legal: boolean
+  card_count: number
+  required_card_count: number
+  checks: {
+    card_count: { valid: boolean; actual: number; required: number }
+    commander: { valid: boolean }
+    duplicates: { valid: boolean; cards: Array<{ oracle_id: string; name: string | null; copies: number }> }
+    color_identity: {
+      valid: boolean
+      commander_colors: string[]
+      cards: Array<{ oracle_id: string; name: string | null; colors: string[] }>
+    }
+  }
+}
+
 export type WorkspaceViewMode = 'grid' | 'list'
 export type WorkspaceOrganizationMode = 'section' | 'category'
+export type CommanderWorkspaceMode = 'normal' | 'template'
 
 export type CollectionCardContextMenuPayload = {
   item: CollectionItem

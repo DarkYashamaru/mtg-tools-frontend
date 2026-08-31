@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { CollectionCardContextMenuPayload, CollectionItem } from './types'
+import CardPriceBadges from '@/components/cards/CardPriceBadges.vue'
 import CardFaceViewer from '@/components/cards/CardFaceViewer.vue'
 
 interface Props {
@@ -74,6 +75,10 @@ function triggerPrimaryAction() {
     <div class="card-copy">
       <strong>{{ props.item.name || 'Unknown Card' }}</strong>
       <p>{{ props.item.set_code }} · {{ props.item.collector_number }}</p>
+      <CardPriceBadges
+        :usd-price="props.item.gameplay_card?.lowest_price_usd"
+        :draco-price="props.item.gameplay_card?.dracostore_price_cop"
+      />
       <dl v-if="props.item.card_insights?.length" class="card-insights">
         <div v-for="insight in props.item.card_insights" :key="insight.label" class="card-insight">
           <dt>{{ insight.label }}</dt>
