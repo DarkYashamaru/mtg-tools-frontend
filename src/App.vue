@@ -22,6 +22,8 @@ const authButtonTarget = computed(() => {
   }
 })
 
+const showCollectionBack = computed(() => route.name === "collection-workspace")
+
 const usernameLabel = computed(() => {
   const currentUser = user.value
 
@@ -44,7 +46,10 @@ function handleLogout() {
 <template>
   <div class="app-shell">
     <header class="topbar">
-      <router-link class="topbar-brand" to="/">MTG Deck Toolkit</router-link>
+      <div class="topbar-leading">
+        <router-link v-if="showCollectionBack" class="topbar-back-button" :to="{ name: 'deck-dashboard' }">Back to Deck Dashboard</router-link>
+        <router-link class="topbar-brand" to="/">MTG Deck Toolkit</router-link>
+      </div>
 
       <div class="topbar-actions">
         <span v-if="usernameLabel" class="user-chip">{{ usernameLabel }}</span>
@@ -80,6 +85,10 @@ function handleLogout() {
   justify-content: space-between;
   gap: 16px;
 }
+
+.topbar-leading { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+
+.topbar-back-button { padding: 9px 12px; border: 1px solid var(--surface-border-light); border-radius: 10px; color: var(--text-main); text-decoration: none; font-weight: 700; }
 
 .topbar-brand {
   color: var(--text-light);

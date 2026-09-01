@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import type { LocationQueryValue } from 'vue-router'
@@ -7,6 +7,7 @@ import CardFaceViewer from '@/components/cards/CardFaceViewer.vue'
 import CardPriceBadges from '@/components/cards/CardPriceBadges.vue'
 import { useAuthStore } from '@/stores/authStore'
 import type { GameplayCard } from '@/types/gameplayCard'
+import { formatSearchResultsExport } from '@/utils/searchResultsExport'
 
 const route = useRoute()
 const router = useRouter()
@@ -15,6 +16,8 @@ const { authHeaders } = storeToRefs(authStore)
 const loading = ref(false)
 const error = ref<string | null>(null)
 const results = ref<GameplayCard[]>([])
+const exportMessage = ref('')
+const exportText = computed(() => formatSearchResultsExport(results.value))
 
 
 function ownershipCollections(card: GameplayCard) {
@@ -59,9 +62,33 @@ function appendValue(
   }
 }
 
+async function copyExport() {
+  exportMessage.value = ''
+
+  try {
+    await navigator.clipboard.writeText(exportText.value)
+    exportMessage.value = 'Export copied to clipboard.'
+  } catch {
+    exportMessage.value = 'Could not copy the export. Use Download TXT instead.'
+  }
+}
+
+function downloadExport() {
+  const blob = new Blob([exportText.value], { type: 'text/plain;charset=utf-8' })
+  const url = window.URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = 'advanced-search-export.txt'
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  window.URL.revokeObjectURL(url)
+}
+
 async function executeSearchFetch() {
   loading.value = true
   error.value = null
+  exportMessage.value = ''
 
   try {
     const params = new URLSearchParams()
@@ -135,6 +162,27 @@ watch(
         Found <strong>{{ results.length }}</strong> matching cards
       </div>
     </header>
+
+    <section class="export-panel" aria-labelledby="search-export-title">
+      <div>
+        <span id="search-export-title" class="export-title">Export search results</span>
+        <span class="export-count">{{ results.length }} cards</span>
+      </div>
+      <p class="export-description">
+        Archidekt-style card list compatible with Deck Details.
+      </p>
+      <div class="export-actions">
+        <button type="button" :disabled="loading || !exportText" @click="copyExport">
+          Copy export
+        </button>
+        <button type="button" :disabled="loading || !exportText" @click="downloadExport">
+          Download TXT
+        </button>
+        <span v-if="exportMessage" class="export-message" role="status" aria-live="polite">
+          {{ exportMessage }}
+        </span>
+      </div>
+    </section>
 
     <div v-if="error" class="error-msg-box">
       <p>{{ error }}</p>

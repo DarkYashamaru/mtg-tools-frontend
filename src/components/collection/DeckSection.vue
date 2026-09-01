@@ -5,17 +5,20 @@ import CollectionListSection from './CollectionListSection.vue'
 import type {
   CollectionCardContextMenuPayload,
   CollectionItem,
+  CollectionProfileSection,
   WorkspaceOrganizationMode,
   WorkspaceViewMode,
 } from './types'
-import { groupCollectionItemsByCategory } from './grouping'
+import { groupCollectionItemsByProfileSection } from './grouping'
 
 interface Props {
   title: string
   items: CollectionItem[]
   viewMode: WorkspaceViewMode
   organizationMode?: WorkspaceOrganizationMode
+  profileSections?: CollectionProfileSection[]
   hideSingletonAmount?: boolean
+  enforceSingletonQuantities?: boolean
   mutatingItemIds?: Array<string | number>
   showQuantityActions?: boolean
   eyebrow?: string
@@ -30,7 +33,9 @@ interface Props {
 
 const props = withDefaults(defineProps<Props>(), {
   organizationMode: 'section',
+  profileSections: () => [],
   hideSingletonAmount: false,
+  enforceSingletonQuantities: false,
   mutatingItemIds: () => [],
   showQuantityActions: true,
   eyebrow: '',
@@ -52,17 +57,43 @@ const emit = defineEmits<{
 }>()
 const totalCards = computed(() => props.items.reduce((sum, item) => sum + item.amount, 0))
 const isCollapsed = ref(props.initiallyCollapsed)
-const categoryGroups = computed(() => (
-  props.organizationMode === 'category' ? groupCollectionItemsByCategory(props.items) : []
+const profileSectionGroups = computed(() => (
+  props.organizationMode === 'category'
+    ? groupCollectionItemsByProfileSection(props.items, props.profileSections)
+    : []
 ))
 </script>
 
 <template>
+  <div v-if="viewMode === 'list' && organizationMode === 'category' && profileSectionGroups.length" class="section-stack">
+    <CollectionListSection
+      v-for="group in profileSectionGroups"
+      :key="group.key"
+      :title="group.title"
+      :items="group.items"
+      :hide-singleton-amount="hideSingletonAmount"
+      :enforce-singleton-quantities="enforceSingletonQuantities"
+      :mutating-item-ids="mutatingItemIds"
+      :description="group.description"
+      :show-quantity-actions="showQuantityActions"
+      :primary-action-label="primaryActionLabel"
+      :primary-action-disabled="primaryActionDisabled"
+      :show-score="showScore"
+      @hover-item="emit('hoverItem', $event)"
+      @context-menu="emit('contextMenu', $event)"
+      @increment-item="emit('incrementItem', $event)"
+      @decrement-item="emit('decrementItem', $event)"
+      @card-click="emit('cardClick', $event)"
+      @primary-action="emit('primaryAction', $event)"
+    />
+  </div>
+
   <CollectionListSection
-    v-if="viewMode === 'list'"
+    v-else-if="viewMode === 'list'"
     :title="title"
     :items="items"
     :hide-singleton-amount="hideSingletonAmount"
+      :enforce-singleton-quantities="enforceSingletonQuantities"
     :mutating-item-ids="mutatingItemIds"
     :eyebrow="eyebrow"
     :description="description"
@@ -110,20 +141,21 @@ const categoryGroups = computed(() => (
       {{ totalCards }} cards hidden
     </div>
 
-    <template v-else-if="organizationMode === 'category' && categoryGroups.length">
-      <div class="category-stack">
-        <section v-for="group in categoryGroups" :key="group.name" class="category-block">
-          <header class="category-header">
-            <h3>{{ group.name }}</h3>
-            <p>{{ group.totalCards }} cards</p>
+    <template v-else-if="organizationMode === 'category' && profileSectionGroups.length">
+      <div class="section-stack">
+        <section v-for="group in profileSectionGroups" :key="group.key" class="section-block">
+          <header class="profile-section-header">
+            <h3>{{ group.title }}</h3>
+            <p>{{ group.totalCards }} cards<span v-if="group.description"> · {{ group.description }}</span></p>
           </header>
 
           <div class="grid-layout">
             <CardImageTile
               v-for="item in group.items"
-              :key="`${group.name}-${item.id}`"
+              :key="`${group.key}-${item.id}`"
               :item="item"
               :hide-singleton-amount="hideSingletonAmount"
+      :enforce-singleton-quantities="enforceSingletonQuantities"
               :is-mutating="mutatingItemIds.includes(item.id)"
               :show-quantity-actions="showQuantityActions"
               :primary-action-label="primaryActionLabel"
@@ -145,6 +177,7 @@ const categoryGroups = computed(() => (
         :key="item.id"
         :item="item"
         :hide-singleton-amount="hideSingletonAmount"
+      :enforce-singleton-quantities="enforceSingletonQuantities"
         :is-mutating="mutatingItemIds.includes(item.id)"
         :show-quantity-actions="showQuantityActions"
         :primary-action-label="primaryActionLabel"
@@ -229,23 +262,23 @@ const categoryGroups = computed(() => (
   gap: 18px;
 }
 
-.category-stack {
+.section-stack {
   display: grid;
   gap: 22px;
 }
 
-.category-block {
+.section-block {
   display: grid;
   gap: 14px;
 }
 
-.category-header h3 {
+.profile-section-header h3 {
   margin: 0;
   color: var(--text-light);
   font-size: 1.05rem;
 }
 
-.category-header p {
+.profile-section-header p {
   margin: 4px 0 0;
   color: var(--text-muted);
   font-size: 0.86rem;

@@ -55,6 +55,7 @@ export interface GameplayCard {
   faces: GameplayCardFace[]
   keywords: Array<{ label: string }>
   color_identity: Array<{ symbol: string }>
+  produced_mana: Array<{ symbol: string }>
   themes: GameplayCardTheme[]
   categories: GameplayCardCategory[]
   archetypes: GameplayCardArchetype[]

@@ -1,10 +1,9 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import CollectionListSection from './CollectionListSection.vue'
 import DeckSection from './DeckSection.vue'
 import type {
   CollectionCardContextMenuPayload,
   CollectionItem,
+  CollectionProfileSection,
   CollectionRecord,
   WorkspaceOrganizationMode,
   WorkspaceViewMode,
@@ -14,6 +13,7 @@ interface Props {
   collection: CollectionRecord
   viewMode: WorkspaceViewMode
   organizationMode: WorkspaceOrganizationMode
+  profileSections?: CollectionProfileSection[]
   mutatingItemIds: Array<string | number>
   showQuantityActions?: boolean
 }
@@ -25,34 +25,18 @@ const emit = defineEmits<{
   incrementItem: [item: CollectionItem]
   decrementItem: [item: CollectionItem]
 }>()
-const sortedItems = computed(() => [...props.collection.items].sort((a, b) => {
-  const nameA = a.name ?? ''
-  const nameB = b.name ?? ''
-  return nameA.localeCompare(nameB)
-}))
 </script>
 
 <template>
-  <CollectionListSection
-    v-if="viewMode === 'list'"
-    :title="organizationMode === 'category' ? 'Binder Inventory' : 'Mainboard'"
-    empty-message="No cards in this binder."
-    :items="sortedItems"
+  <DeckSection
+    title="Binder Inventory"
+    :items="collection.items"
+    :view-mode="viewMode"
+    :organization-mode="organizationMode"
+    :profile-sections="profileSections"
     :mutating-item-ids="mutatingItemIds"
     :show-quantity-actions="showQuantityActions"
     @hover-item="emit('hoverItem', $event)"
-    @context-menu="emit('contextMenu', $event)"
-    @increment-item="emit('incrementItem', $event)"
-    @decrement-item="emit('decrementItem', $event)"
-  />
-  <DeckSection
-    v-else
-    :title="organizationMode === 'category' ? 'Binder Grid' : 'Mainboard'"
-    :items="sortedItems"
-    :view-mode="viewMode"
-    :organization-mode="organizationMode"
-    :mutating-item-ids="mutatingItemIds"
-    :show-quantity-actions="showQuantityActions"
     @context-menu="emit('contextMenu', $event)"
     @increment-item="emit('incrementItem', $event)"
     @decrement-item="emit('decrementItem', $event)"

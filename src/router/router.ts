@@ -64,7 +64,14 @@ const router = createRouter({
     {
       path: '/tools/bulk-deck-builder/collections/:collectionId/commanders/:commanderId/themes/:themeId/builder/:builderCollectionId',
       name: 'commander-builder',
-      component: () => import('@/views/CommanderBuilderView.vue'),
+      redirect: (to) => ({
+        name: 'collection-workspace',
+        params: { collectionId: to.params.builderCollectionId },
+        query: {
+          builderSource: String(to.params.collectionId ?? 'master'),
+          builderTheme: String(to.params.themeId ?? '-1'),
+        },
+      }),
       meta: { requiresAuth: true },
     },
     { path: '/login', name: 'login', component: () => import('@/views/LoginView.vue') },

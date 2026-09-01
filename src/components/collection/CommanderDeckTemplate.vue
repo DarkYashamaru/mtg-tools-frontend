@@ -18,7 +18,10 @@ const roleTargets = computed(() => {
   return { ramp: 16, cardAdvantage: 8 }
 })
 function hasCategory(item: CollectionItem, category: string) { return item.categories?.some((candidate) => candidate.name === category) ?? false }
-const nonCommanderItems = computed(() => props.collection.items.filter((item) => item.zone !== 'commander'))
+const nonCommanderItems = computed(() => props.collection.items.filter((item) => (
+  item.zone !== 'commander' && item.zone !== 'maybeboard'
+)))
+const maybeboardItems = computed(() => props.collection.items.filter((item) => item.zone === 'maybeboard'))
 const sections = computed(() => [
   { title: 'Lands', target: 38, items: nonCommanderItems.value.filter((item) => item.card_types?.includes('Land')) },
   { title: 'Card Advantage', target: roleTargets.value.cardAdvantage, items: nonCommanderItems.value.filter((item) => hasCategory(item, 'Draw')) },
@@ -40,7 +43,8 @@ const sections = computed(() => [
     <p v-else>Combined commander mana value: {{ commanderManaValue }}.</p>
   </section>
   <div class="template-sections">
-    <DeckSection v-for="section in sections" :key="section.title" :title="section.title" :items="section.items" :view-mode="viewMode" :description="section.description" :eyebrow="section.status" :mutating-item-ids="mutatingItemIds" :show-quantity-actions="showQuantityActions" @hover-item="emit('hoverItem', $event)" @context-menu="emit('contextMenu', $event)" @increment-item="emit('incrementItem', $event)" @decrement-item="emit('decrementItem', $event)" />
+    <DeckSection v-for="section in sections" :key="section.title" :title="section.title" :items="section.items" :view-mode="viewMode" :description="section.description" :eyebrow="section.status" :mutating-item-ids="mutatingItemIds" :enforce-singleton-quantities="true" :show-quantity-actions="showQuantityActions" @hover-item="emit('hoverItem', $event)" @context-menu="emit('contextMenu', $event)" @increment-item="emit('incrementItem', $event)" @decrement-item="emit('decrementItem', $event)" />
+    <DeckSection v-if="maybeboardItems.length > 0" title="Maybeboard" :items="maybeboardItems" :view-mode="viewMode" :mutating-item-ids="mutatingItemIds" :enforce-singleton-quantities="true" :show-quantity-actions="showQuantityActions" @hover-item="emit('hoverItem', $event)" @context-menu="emit('contextMenu', $event)" @increment-item="emit('incrementItem', $event)" @decrement-item="emit('decrementItem', $event)" />
   </div>
 </template>
 

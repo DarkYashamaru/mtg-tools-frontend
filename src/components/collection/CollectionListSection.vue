@@ -8,6 +8,7 @@ interface Props {
   emptyMessage?: string
   items: CollectionItem[]
   hideSingletonAmount?: boolean
+  enforceSingletonQuantities?: boolean
   mutatingItemIds?: Array<string | number>
   eyebrow?: string
   description?: string
@@ -21,6 +22,7 @@ interface Props {
 const props = withDefaults(defineProps<Props>(), {
   emptyMessage: 'No cards in this section.',
   hideSingletonAmount: false,
+  enforceSingletonQuantities: false,
   mutatingItemIds: () => [],
   eyebrow: '',
   description: '',
@@ -50,6 +52,16 @@ function clearHover() {
 
 function showQuantity(item: CollectionItem) {
   return !(props.hideSingletonAmount && item.amount === 1)
+}
+
+function isBasicLand(item: CollectionItem) {
+  return item.gameplay_card?.faces.some((face) => (
+    face.supertypes.includes("Basic") && face.card_types.includes("Land")
+  )) ?? false
+}
+
+function hasSingletonViolation(item: CollectionItem) {
+  return props.enforceSingletonQuantities && item.amount > 1 && !isBasicLand(item)
 }
 
 function openContextMenu(event: MouseEvent, item: CollectionItem) {
@@ -86,11 +98,9 @@ function isMutating(item: CollectionItem) {
     <div v-else class="list-layout">
       <div class="table-wrap" @mouseleave="clearHover()">
         <div class="table-head" :class="{ 'has-score': showScore }">
-          <span>Qty</span>
           <span v-if="showScore">Score</span>
           <span>Card</span>
-          <span>Set</span>
-          <span>No.</span>
+          <span>Printing</span>
           <span>Lang</span>
           <span>Price</span>
           <span>{{ primaryActionLabel || (showQuantityActions ? 'Adjust' : 'Status') }}</span>
@@ -109,11 +119,12 @@ function isMutating(item: CollectionItem) {
             @click="emit('cardClick', item)"
             @contextmenu.prevent="openContextMenu($event, item)"
           >
-            <span class="qty">{{ showQuantity(item) ? `${item.amount}x` : '' }}</span>
             <strong v-if="showScore" class="score-value">{{ item.commander_support_score ?? '—' }}</strong>
             <strong class="name-text">{{ item.name || 'Unknown Card' }}</strong>
-            <span>{{ item.set_code || '—' }}</span>
-            <span>{{ item.collector_number || '—' }}</span>
+            <span class="printing-meta">
+              <span>{{ item.set_code || '—' }} · {{ item.collector_number || '—' }}</span>
+              <strong v-if="showQuantity(item)" class="qty" :class="{ violation: hasSingletonViolation(item) }">{{ item.amount }}x</strong>
+            </span>
             <span>{{ item.lang || '—' }}</span>
             <CardPriceBadges
               :usd-price="item.gameplay_card?.lowest_price_usd"
@@ -196,7 +207,7 @@ function isMutating(item: CollectionItem) {
 }
 
 .table-wrap {
-  overflow: hidden;
+  overflow-x: auto;
   border-radius: 18px;
   border: 1px solid var(--surface-border-light);
 }
@@ -204,7 +215,7 @@ function isMutating(item: CollectionItem) {
 .table-head,
 .table-row {
   display: grid;
-  grid-template-columns: 66px minmax(0, 1.5fr) 90px 76px 64px minmax(130px, 1fr) 88px;
+  grid-template-columns: minmax(0, 1.5fr) minmax(150px, .8fr) 64px minmax(130px, 1fr) 88px;
   gap: 12px;
   align-items: center;
   padding: 12px 14px;
@@ -212,7 +223,7 @@ function isMutating(item: CollectionItem) {
 
 .table-head.has-score,
 .table-row.has-score {
-  grid-template-columns: 58px 64px minmax(0, 1.5fr) 90px 76px 64px minmax(130px, 1fr) 88px;
+  grid-template-columns: 64px minmax(0, 1.5fr) minmax(150px, .8fr) 64px minmax(130px, 1fr) 88px;
 }
 
 .table-head {
@@ -246,6 +257,9 @@ function isMutating(item: CollectionItem) {
   color: var(--accent-electric);
   font-weight: 800;
 }
+
+.printing-meta { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+.qty.violation { color: var(--error-text, #fb7185); }
 
 .name-text {
   color: var(--text-light);
@@ -305,22 +319,7 @@ function isMutating(item: CollectionItem) {
 }
 
 @media (max-width: 760px) {
-  .table-head,
-  .table-row {
-    grid-template-columns: 58px minmax(0, 1fr) minmax(120px, 1fr) 76px;
-  }
-
-  .table-head.has-score,
-  .table-row.has-score {
-    grid-template-columns: 50px 54px minmax(0, 1fr) minmax(120px, 1fr) 76px;
-  }
-
-  .table-head span:nth-child(4),
-  .table-head span:nth-child(5),
-  .table-head span:nth-child(6),
-  .table-row span:nth-child(4),
-  .table-row span:nth-child(5) {
-    display: none;
-  }
+  .table-head, .table-row { min-width: 650px; }
+  .table-head.has-score, .table-row.has-score { min-width: 710px; }
 }
 </style>

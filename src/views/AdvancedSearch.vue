@@ -108,7 +108,7 @@ watchEffect(() => {
 
         <div class="field">
           <label for="card-type">Card Type</label>
-          <input id="card-type" v-model="cardType" placeholder="e.g., Creature, Artifact">
+          <input id="card-type" v-model="cardType" placeholder="e.g., Legendary, Creature, Soldier (matches all)">
         </div>
 
         <div class="field">

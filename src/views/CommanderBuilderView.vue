@@ -13,6 +13,8 @@ import type {
   CollectionCardSearchResult,
   CollectionItem,
   CollectionRecord,
+  CollectionSortDirection,
+  CollectionSortKey,
   WorkspaceOrganizationMode,
   WorkspaceViewMode,
 } from '@/components/collection/types'
@@ -20,7 +22,7 @@ import { createCustomTheme, isCustomThemeId } from '@/constants/commanderThemes'
 import { useAuthStore } from '@/stores/authStore'
 import type { GameplayCard } from '@/types/gameplayCard'
 import type { CardThemeResponse } from '@/utils/deckScorer'
-
+import { sortCollectionItems } from '@/components/collection/sorting'
 type SourcePool = 'collection' | 'all'
 type SourceMode = 'sections' | 'spotlight'
 
@@ -89,6 +91,8 @@ const sourceTabs = computed(() => (sourceMode.value === 'spotlight' ? spotlightT
 
 const viewMode = ref<WorkspaceViewMode>('grid')
 const organizationMode = ref<WorkspaceOrganizationMode>('section')
+const sortKey = ref<CollectionSortKey>('name')
+const sortDirection = ref<CollectionSortDirection>('asc')
 
 const filterText = ref('')
 
@@ -176,6 +180,10 @@ const scoredBuilderCollection = computed<CollectionRecord | null>(() => {
   }
 })
 
+const hasSortableBuilderScores = computed(() => (
+  scoredBuilderCollection.value?.items.some((item) => item.commander_support_score !== undefined) ?? false
+))
+
 const filteredBuilderCollection =
   computed<CollectionRecord | null>(() => {
     if (!scoredBuilderCollection.value) {
@@ -186,14 +194,8 @@ const filteredBuilderCollection =
       .trim()
       .toLowerCase()
 
-    if (!query) {
-      return scoredBuilderCollection.value
-    }
-
-    return {
-      ...scoredBuilderCollection.value,
-
-      items: scoredBuilderCollection.value.items.filter(
+    const matchingItems = query
+      ? scoredBuilderCollection.value.items.filter(
         (item) => {
           const haystack = [
             item.name ?? '',
@@ -213,7 +215,12 @@ const filteredBuilderCollection =
 
           return haystack.includes(query)
         },
-      ),
+      )
+      : scoredBuilderCollection.value.items
+
+    return {
+      ...scoredBuilderCollection.value,
+      items: sortCollectionItems(matchingItems, sortKey.value, sortDirection.value),
     }
   })
 
@@ -1396,6 +1403,13 @@ watch(addCardQuery, (value) => {
     }, 250)
 })
 
+watch(hasSortableBuilderScores, (hasScores) => {
+  if (!hasScores && sortKey.value === 'score') {
+    sortKey.value = 'name'
+    sortDirection.value = 'asc'
+  }
+})
+
 watch(viewMode, (mode) => {
   if (mode !== 'list') {
     hoveredItem.value = null
@@ -1638,6 +1652,8 @@ watch(filterText, () => {
                 v-model:organization-mode="
                   organizationMode
                 "
+                v-model:sort-key="sortKey"
+                v-model:sort-direction="sortDirection"
                 v-model:filter-text="
                   filterText
                 "
@@ -1647,6 +1663,7 @@ watch(filterText, () => {
                 :collection="
                   builderCollection
                 "
+                :show-score-sort="hasSortableBuilderScores"
                 :add-card-suggestions="
                   addCardSuggestions
                 "

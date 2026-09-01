@@ -1,6 +1,7 @@
 import type { CollectionItem } from './types'
 
 export type CollectionExportOptions = {
+  includeMaybeboard: boolean
   includeSectionHeaders: boolean
   includeSetCode: boolean
   includeCollectorNumber: boolean
@@ -35,12 +36,16 @@ function formatItem(item: CollectionItem, options: CollectionExportOptions): str
 }
 
 export function formatCollectionExport(items: CollectionItem[], options: CollectionExportOptions): string {
+  const exportableItems = options.includeMaybeboard
+    ? items
+    : items.filter((item) => item.zone !== 'maybeboard')
+
   if (!options.includeSectionHeaders) {
-    return items.map((item) => formatItem(item, options)).filter((line): line is string => Boolean(line)).join('\n')
+    return exportableItems.map((item) => formatItem(item, options)).filter((line): line is string => Boolean(line)).join('\n')
   }
 
   const sections = new Map<string, CollectionItem[]>()
-  for (const item of items) {
+  for (const item of exportableItems) {
     const title = sectionTitle(item.zone || 'mainboard')
     sections.set(title, [...(sections.get(title) ?? []), item])
   }

@@ -3,8 +3,12 @@ import { computed } from 'vue'
 import CardFaceViewer from '@/components/cards/CardFaceViewer.vue'
 import type { CollectionItem } from './types'
 
-interface Props { item: CollectionItem | null }
-const props = defineProps<Props>()
+type PreviewVariant = 'full' | 'card' | 'score'
+
+interface Props { item: CollectionItem | null; variant?: PreviewVariant }
+const props = withDefaults(defineProps<Props>(), { variant: 'full' })
+const showsCard = computed(() => props.variant !== 'score')
+const showsScore = computed(() => props.variant !== 'card')
 const scoreBreakdown = computed(() => props.item?.score_breakdown ?? [])
 const directReasons = computed(() => props.item?.commander_support_reasons ?? [])
 </script>
@@ -13,6 +17,7 @@ const directReasons = computed(() => props.item?.commander_support_reasons ?? []
   <aside class="commander-builder-preview-panel">
     <div v-if="item" class="preview-card">
       <CardFaceViewer
+        v-if="showsCard"
         :card="item.gameplay_card"
         :preview-image-url="item.gameplay_card ? null : item.image_uri"
         :fallback-name="item.name"
@@ -22,24 +27,26 @@ const directReasons = computed(() => props.item?.commander_support_reasons ?? []
       />
       <div class="preview-copy">
         <strong>{{ item.name || 'Unknown Card' }}</strong>
-        <p>{{ item.set_code || '—' }} · {{ item.collector_number || '—' }} · {{ item.lang || '—' }}</p>
+        <p v-if="showsCard">{{ item.set_code || '—' }} · {{ item.collector_number || '—' }} · {{ item.lang || '—' }}</p>
 
-        <div v-if="item.commander_support_score !== undefined" class="score-summary">
-          <span>Total score</span>
-          <strong>{{ item.commander_support_score }}</strong>
-        </div>
-        <p v-else class="unscored-copy">Not scored from this source collection.</p>
-
-        <div v-for="layer in scoreBreakdown" :key="layer.key" class="score-layer">
-          <div class="score-layer-header">
-            <span>{{ layer.label }}</span>
-            <strong>{{ layer.score > 0 ? '+' : '' }}{{ layer.score }}</strong>
+        <template v-if="showsScore">
+          <div v-if="item.commander_support_score !== undefined" class="score-summary">
+            <span>Total score</span>
+            <strong>{{ item.commander_support_score }}</strong>
           </div>
-          <p v-if="layer.reasons.length">{{ layer.reasons.map((reason) => `${reason.label} (${reason.points > 0 ? '+' : ''}${reason.points})`).join(' · ') }}</p>
-        </div>
-        <p v-if="!scoreBreakdown.length && directReasons.length" class="reason-copy">
-          {{ directReasons.map((reason) => `${reason.label} (${reason.points > 0 ? '+' : ''}${reason.points})`).join(' · ') }}
-        </p>
+          <p v-else class="unscored-copy">Not scored from this source collection.</p>
+
+          <div v-for="layer in scoreBreakdown" :key="layer.key" class="score-layer">
+            <div class="score-layer-header">
+              <span>{{ layer.label }}</span>
+              <strong>{{ layer.score > 0 ? '+' : '' }}{{ layer.score }}</strong>
+            </div>
+            <p v-if="layer.reasons.length">{{ layer.reasons.map((reason) => `${reason.label} (${reason.points > 0 ? '+' : ''}${reason.points})`).join(' · ') }}</p>
+          </div>
+          <p v-if="!scoreBreakdown.length && directReasons.length" class="reason-copy">
+            {{ directReasons.map((reason) => `${reason.label} (${reason.points > 0 ? '+' : ''}${reason.points})`).join(' · ') }}
+          </p>
+        </template>
       </div>
     </div>
   </aside>

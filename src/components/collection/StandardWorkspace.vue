@@ -4,6 +4,7 @@ import DeckSection from './DeckSection.vue'
 import type {
   CollectionCardContextMenuPayload,
   CollectionItem,
+  CollectionProfileSection,
   CollectionRecord,
   WorkspaceOrganizationMode,
   WorkspaceViewMode,
@@ -13,6 +14,7 @@ interface Props {
   collection: CollectionRecord
   viewMode: WorkspaceViewMode
   organizationMode: WorkspaceOrganizationMode
+  profileSections?: CollectionProfileSection[]
   mutatingItemIds: Array<string | number>
   showQuantityActions?: boolean
 }
@@ -37,6 +39,7 @@ const hasSideboard = computed(() => sideboardItems.value.length > 0)
       :items="mainboardItems"
       :view-mode="viewMode"
       :organization-mode="organizationMode"
+      :profile-sections="profileSections"
       :mutating-item-ids="mutatingItemIds"
       :show-quantity-actions="showQuantityActions"
       @hover-item="emit('hoverItem', $event)"
@@ -50,6 +53,7 @@ const hasSideboard = computed(() => sideboardItems.value.length > 0)
       :items="sideboardItems"
       :view-mode="viewMode"
       :organization-mode="organizationMode"
+      :profile-sections="profileSections"
       :mutating-item-ids="mutatingItemIds"
       :show-quantity-actions="showQuantityActions"
       @hover-item="emit('hoverItem', $event)"

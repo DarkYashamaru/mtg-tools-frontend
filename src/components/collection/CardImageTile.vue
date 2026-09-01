@@ -6,6 +6,7 @@ import CardFaceViewer from '@/components/cards/CardFaceViewer.vue'
 interface Props {
   item: CollectionItem
   hideSingletonAmount?: boolean
+  enforceSingletonQuantities?: boolean
   isMutating?: boolean
   showQuantityActions?: boolean
   primaryActionLabel?: string
@@ -14,6 +15,7 @@ interface Props {
 
 const props = withDefaults(defineProps<Props>(), {
   hideSingletonAmount: false,
+  enforceSingletonQuantities: false,
   isMutating: false,
   showQuantityActions: true,
   primaryActionLabel: '',
@@ -29,6 +31,16 @@ const emit = defineEmits<{
 
 function shouldShowQuantity() {
   return !(props.hideSingletonAmount && props.item.amount === 1)
+}
+
+function isBasicLand() {
+  return props.item.gameplay_card?.faces.some((face) => (
+    face.supertypes.includes("Basic") && face.card_types.includes("Land")
+  )) ?? false
+}
+
+function hasSingletonViolation() {
+  return props.enforceSingletonQuantities && props.item.amount > 1 && !isBasicLand()
 }
 
 function openContextMenu(event: MouseEvent) {
@@ -69,12 +81,14 @@ function triggerPrimaryAction() {
         :compact-fallback="true"
       />
 
-      <span v-if="shouldShowQuantity()" class="quantity-chip">{{ props.item.amount }}x</span>
     </div>
 
     <div class="card-copy">
       <strong>{{ props.item.name || 'Unknown Card' }}</strong>
-      <p>{{ props.item.set_code }} · {{ props.item.collector_number }}</p>
+      <p class="printing-meta">
+        <span>{{ props.item.set_code || "—" }} · {{ props.item.collector_number || "—" }}</span>
+        <span v-if="shouldShowQuantity()" class="quantity-inline" :class="{ violation: hasSingletonViolation() }">{{ props.item.amount }}x</span>
+      </p>
       <CardPriceBadges
         :usd-price="props.item.gameplay_card?.lowest_price_usd"
         :draco-price="props.item.gameplay_card?.dracostore_price_cop"
@@ -168,17 +182,20 @@ function triggerPrimaryAction() {
   object-fit: contain !important;
 }
 
-.quantity-chip {
-  position: absolute;
-  top: 10px;
-  right: 10px;
-  padding: 6px 10px;
-  border-radius: 999px;
-  border: 1px solid var(--accent-electric-border);
-  background: rgba(9, 13, 22, 0.88);
+.printing-meta {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+
+.quantity-inline {
   color: var(--accent-electric);
-  font-size: 0.82rem;
   font-weight: 800;
+}
+
+.quantity-inline.violation {
+  color: var(--error-text, #fb7185);
 }
 
 .card-copy strong {

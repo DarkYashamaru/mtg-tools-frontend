@@ -4,6 +4,7 @@ import DeckSection from './DeckSection.vue'
 import type {
   CollectionCardContextMenuPayload,
   CollectionItem,
+  CollectionProfileSection,
   CollectionRecord,
   WorkspaceOrganizationMode,
   WorkspaceViewMode,
@@ -13,6 +14,7 @@ interface Props {
   collection: CollectionRecord
   viewMode: WorkspaceViewMode
   organizationMode: WorkspaceOrganizationMode
+  profileSections?: CollectionProfileSection[]
   mutatingItemIds: Array<string | number>
   showQuantityActions?: boolean
   showScore?: boolean
@@ -27,7 +29,10 @@ const emit = defineEmits<{
 }>()
 
 const commanderItems = computed(() => props.collection.items.filter((item) => item.zone === 'commander'))
-const mainboardItems = computed(() => props.collection.items.filter((item) => item.zone !== 'commander'))
+const mainboardItems = computed(() => props.collection.items.filter((item) => (
+  item.zone !== 'commander' && item.zone !== 'maybeboard'
+)))
+const maybeboardItems = computed(() => props.collection.items.filter((item) => item.zone === 'maybeboard'))
 </script>
 
 <template>
@@ -37,8 +42,10 @@ const mainboardItems = computed(() => props.collection.items.filter((item) => it
       :items="commanderItems"
       :view-mode="viewMode"
       :organization-mode="organizationMode"
+      :profile-sections="profileSections"
       :hide-singleton-amount="true"
       :mutating-item-ids="mutatingItemIds"
+      :enforce-singleton-quantities="true"
       :show-quantity-actions="showQuantityActions"
       :show-score="showScore"
       @hover-item="emit('hoverItem', $event)"
@@ -51,7 +58,25 @@ const mainboardItems = computed(() => props.collection.items.filter((item) => it
       :items="mainboardItems"
       :view-mode="viewMode"
       :organization-mode="organizationMode"
+      :profile-sections="profileSections"
       :mutating-item-ids="mutatingItemIds"
+      :enforce-singleton-quantities="true"
+      :show-quantity-actions="showQuantityActions"
+      :show-score="showScore"
+      @hover-item="emit('hoverItem', $event)"
+      @context-menu="emit('contextMenu', $event)"
+      @increment-item="emit('incrementItem', $event)"
+      @decrement-item="emit('decrementItem', $event)"
+    />
+    <DeckSection
+      v-if="maybeboardItems.length > 0"
+      title="Maybeboard"
+      :items="maybeboardItems"
+      :view-mode="viewMode"
+      :organization-mode="organizationMode"
+      :profile-sections="profileSections"
+      :mutating-item-ids="mutatingItemIds"
+      :enforce-singleton-quantities="true"
       :show-quantity-actions="showQuantityActions"
       :show-score="showScore"
       @hover-item="emit('hoverItem', $event)"

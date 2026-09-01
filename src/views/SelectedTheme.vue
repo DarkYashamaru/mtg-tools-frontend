@@ -331,12 +331,9 @@ async function startConstructingDeck() {
       throw new Error(data.error || 'Unable to start commander builder.')
     }
     await router.push({
-      name: 'commander-builder',
+      name: 'collection-workspace',
       params: {
-        collectionId: activeCollectionId.value,
-        commanderId: activeCommanderId.value,
-        themeId: activeThemeId.value,
-        builderCollectionId: data.collection.id,
+        collectionId: data.collection.id,
       },
     })
   } catch (error) {

@@ -1,39 +1,27 @@
-import type { CollectionItem } from './types'
+import type { CollectionItem, CollectionProfileSection } from './types'
 
-export type CollectionCategoryGroup = {
-  name: string
+export type CollectionSectionGroup = {
+  key: string
+  title: string
+  description: string
   items: CollectionItem[]
   totalCards: number
 }
 
-function normalizedCategoryNames(item: CollectionItem): string[] {
-  const categoryNames = (item.categories ?? [])
-    .map((category) => category?.name?.trim())
-    .filter((name): name is string => !!name)
-
-  if (categoryNames.length > 0) {
-    return categoryNames
-  }
-
-  return ['Uncategorized']
-}
-
-export function groupCollectionItemsByCategory(items: CollectionItem[]): CollectionCategoryGroup[] {
-  const groups = new Map<string, CollectionItem[]>()
-
-  for (const item of items) {
-    for (const categoryName of normalizedCategoryNames(item)) {
-      const bucket = groups.get(categoryName) ?? []
-      bucket.push(item)
-      groups.set(categoryName, bucket)
-    }
-  }
-
-  return Array.from(groups.entries())
-    .map(([name, groupedItems]) => ({
-      name,
+export function groupCollectionItemsByProfileSection(
+  items: CollectionItem[],
+  sections: CollectionProfileSection[],
+): CollectionSectionGroup[] {
+  return sections.flatMap((section) => {
+    const sectionOracleIds = new Set(section.oracle_ids)
+    const groupedItems = items.filter((item) => item.oracle_id && sectionOracleIds.has(item.oracle_id))
+    if (groupedItems.length === 0) return []
+    return [{
+      key: section.key,
+      title: section.title,
+      description: section.description,
       items: groupedItems,
       totalCards: groupedItems.reduce((sum, item) => sum + item.amount, 0),
-    }))
-    .sort((left, right) => left.name.localeCompare(right.name))
+    }]
+  })
 }

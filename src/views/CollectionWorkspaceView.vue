@@ -6,12 +6,20 @@ import CollectionHeader from '@/components/collection/CollectionHeader.vue'
 import CollectionHoverPreview from '@/components/collection/CollectionHoverPreview.vue'
 import CollectionManaCurve from '@/components/collection/CollectionManaCurve.vue'
 import CollectionToolbar from '@/components/collection/CollectionToolbar.vue'
+import CommanderBuilderHoverPreview from '@/components/collection/CommanderBuilderHoverPreview.vue'
 import CommanderDeckTemplate from '@/components/collection/CommanderDeckTemplate.vue'
+import CardPrintPickerModal from "@/components/collection/CardPrintPickerModal.vue"
+import BasicLandAdjustModal from '@/components/collection/BasicLandAdjustModal.vue'
+import CommanderSourceBrowserModal from '@/components/collection/CommanderSourceBrowserModal.vue'
 import type {
+  BasicLandAdjustment,
   CommanderWorkspaceMode,
   CollectionCardContextMenuPayload,
   CollectionCardSearchResult,
   CollectionItem,
+  CollectionProfileSection,
+  CollectionSortDirection,
+  CollectionSortKey,
   CollectionRecord,
   DeckLegalityResult,
   WorkspaceOrganizationMode,
@@ -21,7 +29,7 @@ import { useAuthStore } from '@/stores/authStore'
 import type { GameplayCard } from '@/types/gameplayCard'
 import { collectionFacetOptions, matchesCollectionFacets, type CollectionFacetFilters } from '@/components/collection/filtering'
 import { formatCollectionExport, type CollectionExportOptions } from '@/components/collection/exporting'
-
+import { sortCollectionItems } from '@/components/collection/sorting'
 const CommanderWorkspace = defineAsyncComponent(() => import('@/components/collection/CommanderWorkspace.vue'))
 const StandardWorkspace = defineAsyncComponent(() => import('@/components/collection/StandardWorkspace.vue'))
 const BinderWorkspace = defineAsyncComponent(() => import('@/components/collection/BinderWorkspace.vue'))
@@ -40,6 +48,7 @@ const supertypeFilters = ref<string[]>([])
 const cardTypeFilters = ref<string[]>([])
 const subtypeFilters = ref<string[]>([])
 const exportOptions = ref<CollectionExportOptions>({
+  includeMaybeboard: false,
   includeSectionHeaders: false,
   includeSetCode: false,
   includeCollectorNumber: false,
@@ -52,13 +61,29 @@ const isSearchingCards = ref(false)
 const isAddingCard = ref(false)
 const viewMode = ref<WorkspaceViewMode>('list')
 const organizationMode = ref<WorkspaceOrganizationMode>('section')
+const sortKey = ref<CollectionSortKey>('name')
+const sortDirection = ref<CollectionSortDirection>('asc')
 const commanderWorkspaceMode = ref<CommanderWorkspaceMode>('normal')
 const hoveredItem = ref<CollectionItem | null>(null)
 const contextMenuState = ref<CollectionCardContextMenuPayload | null>(null)
+const printPickerItem = ref<CollectionItem | null>(null)
+const isReplacingPrint = ref(false)
 const mutatingItemIds = ref<Array<string | number>>([])
 const isMutatingCommander = ref(false)
 const isValidatingDeck = ref(false)
 const deckLegalityResult = ref<DeckLegalityResult | null>(null)
+const isSourceModalOpen = ref(false)
+const isAddingSourceCard = ref(false)
+const sourceActionError = ref('')
+const sourceActionMessage = ref('')
+const isBasicLandModalOpen = ref(false)
+const basicLandAdjustmentMessage = ref('')
+const commanderScoresByOracleId = ref<Record<string, {
+  score: number
+  reasons: NonNullable<CollectionItem['commander_support_reasons']>
+  score_breakdown?: NonNullable<CollectionItem['score_breakdown']>
+}>>({})
+const profileSections = ref<CollectionProfileSection[]>([])
 let addCardSearchTimeout: ReturnType<typeof window.setTimeout> | null = null
 let latestAddCardSearchRequest = 0
 
@@ -66,13 +91,36 @@ const collectionId = computed(() => String(route.params.collectionId ?? ''))
 const addCardZone = computed(() => 'mainboard')
 const isMasterCollectionRoute = computed(() => collectionId.value === 'master')
 const isReadOnlyCollection = computed(() => collection.value?.is_read_only === true)
+const isCommanderCollection = computed(() => collection.value?.deck_type.toLowerCase() === 'commander')
+const legacyBuilderSource = computed(() => typeof route.query.builderSource === 'string' ? route.query.builderSource : null)
+const legacyBuilderTheme = computed(() => {
+  const rawValue = typeof route.query.builderTheme === 'string' ? Number(route.query.builderTheme) : Number.NaN
+  return Number.isFinite(rawValue) ? rawValue : null
+})
+const builderSourceCollectionId = computed(() => (
+  collection.value?.builder_source_collection_id ?? legacyBuilderSource.value ?? 'master'
+))
+const builderThemeId = computed(() => (
+  collection.value?.builder_theme_id ?? legacyBuilderTheme.value ?? -1
+))
 const commanderItems = computed(() => collection.value?.items.filter((item) => item.zone === 'commander') ?? [])
 const isCommanderTemplateMode = computed(() => collection.value?.deck_type.toLowerCase() === 'commander' && commanderWorkspaceMode.value === 'template')
+const existingCommanderDeckOracleIds = computed(() => Array.from(new Set(
+  (collection.value?.items ?? [])
+    .filter((item) => item.oracle_id && !isBasicLand(item))
+    .map((item) => item.oracle_id as string),
+)))
 const deckValueUsd = computed(() => (
-  collection.value?.items.reduce((total, item) => (
+  collection.value?.items.filter((item) => item.zone !== 'maybeboard').reduce((total, item) => (
     total + (item.gameplay_card?.lowest_price_usd ?? 0) * item.amount
   ), 0) ?? 0
 ))
+
+function isBasicLand(item: CollectionItem) {
+  return item.gameplay_card?.faces.some((face) => (
+    face.supertypes.includes("Basic") && face.card_types.includes("Land")
+  )) ?? false
+}
 
 const collectionFacetFilters = computed<CollectionFacetFilters>(() => ({
   colors: colorFilters.value,
@@ -83,38 +131,66 @@ const collectionFacetFilters = computed<CollectionFacetFilters>(() => ({
 
 const facetOptions = computed(() => collectionFacetOptions(collection.value?.items ?? []))
 
-const filteredCollection = computed<CollectionRecord | null>(() => {
-  if (!collection.value) {
-    return null
-  }
-
-  const query = filterText.value.trim().toLowerCase()
-
+const scoredCollection = computed<CollectionRecord | null>(() => {
+  if (!collection.value) return null
+  if (!isCommanderCollection.value) return collection.value
   return {
     ...collection.value,
-    items: collection.value.items.filter((item) => {
-      const haystack = [
-        item.name ?? '',
-        item.set_code ?? '',
-        item.collector_number ?? '',
-        item.lang ?? '',
-        item.zone ?? '',
-        ...(item.categories ?? []).map((category) => category.name),
-        ...(item.archetypes ?? []).map((archetype) => archetype.name),
-      ].join(' ').toLowerCase()
-
-      return haystack.includes(query) && matchesCollectionFacets(item, collectionFacetFilters.value)
+    items: collection.value.items.map((item) => {
+      const score = item.oracle_id ? commanderScoresByOracleId.value[item.oracle_id] : undefined
+      return score ? {
+        ...item,
+        commander_support_score: score.score,
+        commander_support_reasons: score.reasons,
+        score_breakdown: score.score_breakdown,
+      } : item
     }),
   }
 })
 
+const hasSortableScores = computed(() => (
+  scoredCollection.value?.items.some((item) => item.commander_support_score !== undefined) ?? false
+))
+
+const filteredCollection = computed<CollectionRecord | null>(() => {
+  if (!scoredCollection.value) {
+    return null
+  }
+
+  const query = filterText.value.trim().toLowerCase()
+  const matchingItems = scoredCollection.value.items.filter((item) => {
+    const haystack = [
+      item.name ?? '',
+      item.set_code ?? '',
+      item.collector_number ?? '',
+      item.lang ?? '',
+      item.zone ?? '',
+      ...(item.categories ?? []).map((category) => category.name),
+      ...(item.archetypes ?? []).map((archetype) => archetype.name),
+    ].join(' ').toLowerCase()
+
+    return haystack.includes(query) && matchesCollectionFacets(item, collectionFacetFilters.value)
+  })
+
+  return {
+    ...scoredCollection.value,
+    items: sortCollectionItems(matchingItems, sortKey.value, sortDirection.value),
+  }
+})
+
+
+const exportableFilteredItems = computed(() => (
+  (filteredCollection.value?.items ?? []).filter((item) => (
+    exportOptions.value.includeMaybeboard || item.zone !== 'maybeboard'
+  ))
+))
 
 const filteredCardCopies = computed(() => (
-  filteredCollection.value?.items.reduce((total, item) => total + item.amount, 0) ?? 0
+  exportableFilteredItems.value.reduce((total, item) => total + item.amount, 0)
 ))
 
 const exportText = computed(() => formatCollectionExport(
-  filteredCollection.value?.items ?? [],
+  exportableFilteredItems.value,
   exportOptions.value,
 ))
 
@@ -158,6 +234,7 @@ const workspaceComponent = computed(() => {
   }
   return BinderWorkspace
 })
+const workspaceComponentProps = computed(() => isCommanderCollection.value ? { showScore: true } : {})
 
 const showCommanderBuilderAction = computed(() => (
   collection.value?.deck_type.toLowerCase() === 'binder'
@@ -320,6 +397,8 @@ async function loadCollection() {
 
     const loadedCollection = data.collection as CollectionRecord
     collection.value = await enrichCollectionWithGameplay(loadedCollection)
+    await loadCommanderScores()
+    await loadProfileSections()
     deckLegalityResult.value = null
     hoveredItem.value = null
     organizationMode.value = 'section'
@@ -329,6 +408,65 @@ async function loadCollection() {
     errorMessage.value = error instanceof Error ? error.message : 'Unable to load collection workspace.'
   } finally {
     isLoading.value = false
+  }
+}
+
+async function loadCommanderScores() {
+  if (!collection.value || !isCommanderCollection.value || !collection.value.commander_oracle_id) {
+    commanderScoresByOracleId.value = {}
+    return
+  }
+  const oracleIds = Array.from(new Set(
+    collection.value.items.map((item) => item.oracle_id).filter((id): id is string => Boolean(id))
+  ))
+  if (oracleIds.length === 0) {
+    commanderScoresByOracleId.value = {}
+    return
+  }
+  const fetchScores = async (sourceCollectionId: string) => {
+    const response = await fetch(
+      `/api/commander-builder-source/${sourceCollectionId}/${collection.value!.commander_oracle_id}/scores`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders.value },
+        body: JSON.stringify({ oracle_ids: oracleIds }),
+      },
+    )
+    const data = await response.json().catch(() => ({}))
+    return { response, data }
+  }
+
+  try {
+    let { response, data } = await fetchScores(builderSourceCollectionId.value)
+    if (response.status === 404 && builderSourceCollectionId.value !== 'master') {
+      ;({ response, data } = await fetchScores('master'))
+    }
+    commanderScoresByOracleId.value = response.ok && data.success && data.scores ? data.scores : {}
+  } catch {
+    // Scoring is supplementary; the collection workspace remains editable without it.
+    commanderScoresByOracleId.value = {}
+  }
+}
+
+async function loadProfileSections() {
+  if (!collection.value) {
+    profileSections.value = []
+    return
+  }
+
+  const endpoint = isMasterCollectionRoute.value
+    ? '/api/collections/master/sections'
+    : `/api/collections/${collection.value.id}/sections`
+  try {
+    const response = await fetch(endpoint, { headers: { ...authHeaders.value } })
+    const data = await response.json().catch(() => ({}))
+    profileSections.value = response.ok && data.success && Array.isArray(data.sections)
+      ? data.sections as CollectionProfileSection[]
+      : []
+  } catch {
+    // Section organization is supplementary; keep the flat collection usable if
+    // cached scoring has not been refreshed yet.
+    profileSections.value = []
   }
 }
 
@@ -364,9 +502,6 @@ async function validateDeck() {
   }
 }
 
-function goBack() {
-  router.push({ name: 'deck-dashboard' })
-}
 
 function handleHoverItem(item: CollectionItem | null) {
   hoveredItem.value = item
@@ -427,11 +562,47 @@ async function mutateItemQuantity(item: CollectionItem, direction: 'increment' |
 
     const updatedCollection = mergeCollectionMetadata(data.collection as CollectionRecord)
     collection.value = updatedCollection
+    await loadCommanderScores()
+    await loadProfileSections()
     deckLegalityResult.value = null
 
     hoveredItem.value = updatedCollection.items.find((candidate) => candidate.id === item.id) ?? null
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : 'Unable to update collection item.'
+  } finally {
+    endItemMutation(item.id)
+  }
+}
+
+async function moveItemToZone(item: CollectionItem, zone: 'mainboard' | 'maybeboard') {
+  if (!collection.value || isReadOnlyCollection.value || !isCommanderCollection.value) return
+
+  beginItemMutation(item.id)
+  errorMessage.value = ''
+  closeContextMenu()
+  try {
+    const response = await fetch(`/api/collections/${collection.value.id}/items/${item.id}/zone`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', ...authHeaders.value },
+      body: JSON.stringify({ zone }),
+    })
+    const data = await response.json().catch(() => ({}))
+    if (response.status === 401) {
+      authStore.logout()
+      router.replace({ name: 'login', query: { redirect: route.fullPath } })
+      return
+    }
+    if (!response.ok || !data.success || !data.collection) {
+      throw new Error(data.error || 'Unable to move collection item.')
+    }
+
+    const updatedCollection = mergeCollectionMetadata(data.collection as CollectionRecord)
+    collection.value = updatedCollection
+    await loadCommanderScores()
+    await loadProfileSections()
+    deckLegalityResult.value = null
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : 'Unable to move collection item.'
   } finally {
     endItemMutation(item.id)
   }
@@ -480,14 +651,24 @@ async function addSuggestedCard(suggestion: CollectionCardSearchResult) {
   dismissAddCardSuggestions()
 
   try {
-    const response = await fetch(`/api/collections/${collection.value.id}/items`, {
+    await addCardToMainboard(suggestion.card_id)
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : 'Unable to add card to collection.'
+  } finally {
+    isAddingCard.value = false
+  }
+}
+
+async function addCardToMainboard(cardId: string) {
+  if (!collection.value || isReadOnlyCollection.value) return
+  const response = await fetch(`/api/collections/${collection.value.id}/items`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         ...authHeaders.value,
       },
       body: JSON.stringify({
-        card_id: suggestion.card_id,
+        card_id: cardId,
         zone: addCardZone.value,
         amount: 1,
       }),
@@ -501,7 +682,7 @@ async function addSuggestedCard(suggestion: CollectionCardSearchResult) {
         name: 'login',
         query: { redirect: route.fullPath },
       })
-      return
+      throw new Error('Authentication required.')
     }
 
     if (!response.ok || !data.success || !data.collection) {
@@ -510,16 +691,89 @@ async function addSuggestedCard(suggestion: CollectionCardSearchResult) {
 
     const mergedCollection = mergeCollectionMetadata(data.collection as CollectionRecord)
     collection.value = await enrichCollectionWithGameplay(mergedCollection, collection.value)
+    await loadCommanderScores()
+    await loadProfileSections()
     deckLegalityResult.value = null
+}
+
+async function addSourceCard(item: CollectionItem) {
+  if (isAddingSourceCard.value) return
+  isAddingSourceCard.value = true
+  sourceActionError.value = ''
+  sourceActionMessage.value = ''
+  try {
+    await addCardToMainboard(item.card_id)
+    sourceActionMessage.value = `Added ${item.name || 'card'} to the deck.`
   } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : 'Unable to add card to collection.'
+    sourceActionError.value = error instanceof Error ? error.message : 'Unable to add source card.'
   } finally {
-    isAddingCard.value = false
+    isAddingSourceCard.value = false
   }
 }
 
 function handleContextMenu(payload: CollectionCardContextMenuPayload) {
   contextMenuState.value = payload
+}
+
+function openPrintPicker() {
+  const item = contextMenuState.value?.item
+  if (!item?.oracle_id || isReadOnlyCollection.value) return
+  printPickerItem.value = item
+  closeContextMenu()
+}
+
+async function replacePrint(cardId: string) {
+  const item = printPickerItem.value
+  if (!collection.value || !item || isReplacingPrint.value) return
+  isReplacingPrint.value = true
+  errorMessage.value = ""
+  try {
+    const response = await fetch(`/api/collections/${collection.value.id}/items/${item.id}/print`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...authHeaders.value },
+      body: JSON.stringify({ card_id: cardId }),
+    })
+    const data = await response.json().catch(() => ({}))
+    if (response.status === 401) { authStore.logout(); await router.replace({ name: "login", query: { redirect: route.fullPath } }); return }
+    if (!response.ok || !data.success || !data.collection) throw new Error(data.error || "Unable to replace printing.")
+    const updated = mergeCollectionMetadata(data.collection as CollectionRecord)
+    collection.value = await enrichCollectionWithGameplay(updated, collection.value)
+    printPickerItem.value = null
+    hoveredItem.value = null
+    deckLegalityResult.value = null
+    await loadCommanderScores()
+    await loadProfileSections()
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : "Unable to replace printing."
+  } finally { isReplacingPrint.value = false }
+}
+
+function openBasicLandAdjustModal() {
+  if (!collection.value || !isCommanderCollection.value || isReadOnlyCollection.value) return
+  basicLandAdjustmentMessage.value = ''
+  isBasicLandModalOpen.value = true
+}
+
+async function handleBasicLandUnauthorized() {
+  isBasicLandModalOpen.value = false
+  authStore.logout()
+  await router.replace({ name: 'login', query: { redirect: route.fullPath } })
+}
+
+async function handleBasicLandAdjusted(
+  updatedCollection: CollectionRecord,
+  adjustment: BasicLandAdjustment,
+) {
+  const mergedCollection = mergeCollectionMetadata(updatedCollection)
+  collection.value = await enrichCollectionWithGameplay(mergedCollection, collection.value)
+  hoveredItem.value = null
+  deckLegalityResult.value = null
+  isBasicLandModalOpen.value = false
+  basicLandAdjustmentMessage.value = adjustment.target_reached
+    ? `Basic lands adjusted to ${adjustment.reachable_land_count} total lands.`
+    : adjustment.warning || `Basic lands adjusted to ${adjustment.reachable_land_count} total lands.`
+  await loadCommanderScores()
+  await loadProfileSections()
 }
 
 function closeContextMenu() {
@@ -576,6 +830,9 @@ async function mutateCommander(item: CollectionItem, action: 'set' | 'remove') {
 
     const updated = mergeCollectionMetadata(data.collection as CollectionRecord)
     collection.value = await enrichCollectionWithGameplay(updated, collection.value)
+    isSourceModalOpen.value = false
+    await loadCommanderScores()
+    await loadProfileSections()
     deckLegalityResult.value = null
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : 'Unable to update commander.'
@@ -590,6 +847,18 @@ function handleGlobalPointer() {
 function handleGlobalEscape(event: KeyboardEvent) {
   if (event.key === 'Escape') {
     closeContextMenu()
+    return
+  }
+
+  const item = contextMenuState.value?.item
+  if (!item || event.ctrlKey || event.metaKey || event.altKey || event.repeat) return
+  const key = event.key.toLowerCase()
+  if (key === 'm' && item.zone === 'mainboard') {
+    event.preventDefault()
+    void moveItemToZone(item, 'maybeboard')
+  } else if (key === 'a' && item.zone === 'maybeboard') {
+    event.preventDefault()
+    void moveItemToZone(item, 'mainboard')
   }
 }
 
@@ -608,16 +877,21 @@ function reopenCommanderBuilder() {
   if (!collection.value?.commander_oracle_id) {
     return
   }
+  sourceActionError.value = ''
+  sourceActionMessage.value = ''
+  isSourceModalOpen.value = true
+}
 
-  router.push({
-    name: 'commander-builder',
-    params: {
-      collectionId: collection.value.builder_source_collection_id ?? 'master',
-      commanderId: collection.value.commander_oracle_id,
-      themeId: collection.value.builder_theme_id ?? -1,
-      builderCollectionId: collection.value.id,
-    },
-  })
+function closeSourceBrowser() {
+  isSourceModalOpen.value = false
+  sourceActionError.value = ''
+}
+  sourceActionMessage.value = ''
+
+function openItemCardDetails(item: CollectionItem) {
+  if (!item.oracle_id) return
+  const routeData = router.resolve({ name: 'card-detail', params: { id: item.oracle_id } })
+  window.open(routeData.href, '_blank')
 }
 
 function goToMasterAdvancedSearch() {
@@ -641,6 +915,13 @@ onBeforeUnmount(() => {
   window.removeEventListener('click', handleGlobalPointer)
   window.removeEventListener('scroll', handleGlobalPointer, true)
   window.removeEventListener('keydown', handleGlobalEscape)
+})
+
+watch(hasSortableScores, (hasScores) => {
+  if (!hasScores && sortKey.value === 'score') {
+    sortKey.value = 'name'
+    sortDirection.value = 'asc'
+  }
 })
 
 watch(viewMode, (mode) => {
@@ -686,11 +967,6 @@ watch(addCardQuery, (value) => {
 <template>
   <div class="workspace-page">
     <section class="workspace-shell">
-      <div class="nav-row">
-        <button class="back-button" type="button" @click="goBack">
-          Back to Deck Dashboard
-        </button>
-      </div>
 
       <div v-if="isLoading" class="loading-panel skeleton-pulse">
         <div class="loading-copy">
@@ -718,32 +994,13 @@ watch(addCardQuery, (value) => {
           @search-master-collection="goToMasterAdvancedSearch"
           @validate-deck="validateDeck"
         />
-        <CollectionToolbar
-          v-model="viewMode"
-          v-model:commander-workspace-mode="commanderWorkspaceMode"
-          v-model:organization-mode="organizationMode"
-          v-model:filter-text="filterText"
-          v-model:color-filters="colorFilters"
-          v-model:supertype-filters="supertypeFilters"
-          v-model:card-type-filters="cardTypeFilters"
-          v-model:subtype-filters="subtypeFilters"
-          v-model:add-card-query="addCardQuery"
-          :collection="collection"
-          :supertype-options="facetOptions.supertypes"
-          :card-type-options="facetOptions.cardTypes"
-          :subtype-options="facetOptions.subtypes"
-          :add-card-suggestions="addCardSuggestions"
-          :add-card-loading="isSearchingCards"
-          :add-card-disabled="isAddingCard || isReadOnlyCollection"
-          @select-add-card-suggestion="addSuggestedCard"
-          @dismiss-add-card-suggestions="dismissAddCardSuggestions"
-        />
         <section class="export-panel">
           <div>
             <span class="export-title">Export filtered cards</span>
-            <span class="export-count">{{ filteredCardCopies }} cards across {{ filteredCollection.items.length }} entries</span>
+            <span class="export-count">{{ filteredCardCopies }} cards across {{ exportableFilteredItems.length }} entries</span>
           </div>
           <div class="export-options">
+            <label><input v-model="exportOptions.includeMaybeboard" type="checkbox"> Include Maybeboard</label>
             <label><input v-model="exportOptions.includeSectionHeaders" type="checkbox"> Generic section headers</label>
             <label><input v-model="exportOptions.includeSetCode" type="checkbox"> Set code</label>
             <label><input v-model="exportOptions.includeCollectorNumber" type="checkbox" :disabled="!exportOptions.includeSetCode"> Collector number</label>
@@ -757,6 +1014,36 @@ watch(addCardQuery, (value) => {
         </section>
 
         <CollectionManaCurve v-if="shouldShowManaCurve" :collection="collection" />
+        <CollectionToolbar
+          v-model="viewMode"
+          v-model:commander-workspace-mode="commanderWorkspaceMode"
+          v-model:organization-mode="organizationMode"
+          v-model:sort-key="sortKey"
+          v-model:sort-direction="sortDirection"
+          v-model:filter-text="filterText"
+          v-model:color-filters="colorFilters"
+          v-model:supertype-filters="supertypeFilters"
+          v-model:card-type-filters="cardTypeFilters"
+          v-model:subtype-filters="subtypeFilters"
+          v-model:add-card-query="addCardQuery"
+          :collection="collection"
+          :show-score-sort="hasSortableScores"
+          :supertype-options="facetOptions.supertypes"
+          :card-type-options="facetOptions.cardTypes"
+          :subtype-options="facetOptions.subtypes"
+          :add-card-suggestions="addCardSuggestions"
+          :add-card-loading="isSearchingCards"
+          :add-card-disabled="isAddingCard || isReadOnlyCollection"
+          :show-basic-land-adjust="isCommanderCollection && !isReadOnlyCollection"
+          :basic-land-adjust-disabled="commanderItems.length === 0"
+          @adjust-basic-lands="openBasicLandAdjustModal"
+          @select-add-card-suggestion="addSuggestedCard"
+          @dismiss-add-card-suggestions="dismissAddCardSuggestions"
+        />
+
+        <p v-if="basicLandAdjustmentMessage" class="basic-land-adjustment-message">
+          {{ basicLandAdjustmentMessage }}
+        </p>
 
         <div v-if="filteredCollection.items.length === 0 && !isCommanderTemplateMode" class="state-panel">
           <h2>No cards match this filter</h2>
@@ -773,9 +1060,11 @@ watch(addCardQuery, (value) => {
         <div v-else-if="viewMode === 'list'" class="workspace-content-grid">
           <component
             :is="workspaceComponent"
+            v-bind="workspaceComponentProps"
             :collection="filteredCollection"
             :view-mode="viewMode"
             :organization-mode="organizationMode"
+            :profile-sections="profileSections"
             :mutating-item-ids="mutatingItemIds"
             :show-quantity-actions="!isReadOnlyCollection"
             @hover-item="handleHoverItem"
@@ -783,15 +1072,18 @@ watch(addCardQuery, (value) => {
             @increment-item="mutateItemQuantity($event, 'increment')"
             @decrement-item="mutateItemQuantity($event, 'decrement')"
           />
-          <CollectionHoverPreview :item="hoveredItem" />
+          <CommanderBuilderHoverPreview v-if="isCommanderCollection" :item="hoveredItem" />
+          <CollectionHoverPreview v-else :item="hoveredItem" />
         </div>
 
         <component
           :is="workspaceComponent"
+          v-bind="workspaceComponentProps"
           v-else
           :collection="filteredCollection"
           :view-mode="viewMode"
           :organization-mode="organizationMode"
+          :profile-sections="profileSections"
           :mutating-item-ids="mutatingItemIds"
           :show-quantity-actions="!isReadOnlyCollection"
           @context-menu="handleContextMenu"
@@ -814,6 +1106,14 @@ watch(addCardQuery, (value) => {
             Show card details
           </button>
           <button
+            v-if="!isReadOnlyCollection && contextMenuState.item.oracle_id"
+            class="context-menu-action"
+            type="button"
+            @click="openPrintPicker"
+          >
+            Change printing
+          </button>
+          <button
             v-if="collection?.deck_type.toLowerCase() === 'commander' && !isReadOnlyCollection"
             class="context-menu-action"
             type="button"
@@ -822,7 +1122,57 @@ watch(addCardQuery, (value) => {
           >
             {{ contextMenuState.item.zone === 'commander' ? 'Remove as commander' : 'Set as commander' }}
           </button>
+          <button
+            v-if="isCommanderCollection && !isReadOnlyCollection && contextMenuState.item.zone === 'mainboard'"
+            class="context-menu-action"
+            type="button"
+            :disabled="mutatingItemIds.includes(contextMenuState.item.id)"
+            @click="moveItemToZone(contextMenuState.item, 'maybeboard')"
+          >
+            Move to Maybeboard (M)
+          </button>
+          <button
+            v-else-if="isCommanderCollection && !isReadOnlyCollection && contextMenuState.item.zone === 'maybeboard'"
+            class="context-menu-action"
+            type="button"
+            :disabled="mutatingItemIds.includes(contextMenuState.item.id)"
+            @click="moveItemToZone(contextMenuState.item, 'mainboard')"
+          >
+            Move to Mainboard (A)
+          </button>
         </div>
+
+        <BasicLandAdjustModal
+          :open="isBasicLandModalOpen"
+          :collection="collection"
+          :auth-headers="authHeaders"
+          @close="isBasicLandModalOpen = false"
+          @applied="handleBasicLandAdjusted"
+          @unauthorized="handleBasicLandUnauthorized"
+        />
+
+        <CardPrintPickerModal
+          :open="!!printPickerItem"
+          :item="printPickerItem"
+          :replacing="isReplacingPrint"
+          @close="printPickerItem = null"
+          @select="replacePrint"
+        />
+
+        <CommanderSourceBrowserModal
+          v-if="collection.commander_oracle_id"
+          :open="isSourceModalOpen"
+          :source-collection-id="builderSourceCollectionId"
+          :commander-oracle-id="collection.commander_oracle_id"
+          :theme-id="builderThemeId"
+          :deck-oracle-ids="existingCommanderDeckOracleIds"
+          :adding-card="isAddingSourceCard"
+          :action-error="sourceActionError"
+          :action-message="sourceActionMessage"
+          @close="closeSourceBrowser"
+          @add-card="addSourceCard"
+          @open-card="openItemCardDetails"
+        />
       </template>
     </section>
   </div>
@@ -866,6 +1216,15 @@ watch(addCardQuery, (value) => {
   margin-left: 10px;
   color: var(--text-muted);
   font-size: 0.9rem;
+}
+
+.basic-land-adjustment-message {
+  margin: 0;
+  padding: 11px 14px;
+  border: 1px solid rgba(34, 197, 94, 0.35);
+  border-radius: 12px;
+  color: #bbf7d0;
+  background: rgba(22, 163, 74, 0.14);
 }
 
 .export-options,
@@ -937,22 +1296,7 @@ watch(addCardQuery, (value) => {
   opacity: 0.55;
 }
 
-.nav-row {
-  display: flex;
-  justify-content: flex-start;
-}
 
-.back-button {
-  padding: 12px 16px;
-  border: 1px solid var(--surface-border-light);
-  border-radius: 14px;
-  background: transparent;
-  color: var(--text-main);
-  font-family: var(--font-sans);
-  font-size: 0.94rem;
-  font-weight: 700;
-  cursor: pointer;
-}
 
 .loading-panel,
 .state-panel {

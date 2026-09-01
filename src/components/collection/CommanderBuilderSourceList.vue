@@ -11,6 +11,7 @@ interface Props {
   hasMore: boolean
   isLoading?: boolean
   loadError?: string
+  existingOracleIds?: string[]
   primaryActionDisabled?: boolean
 }
 
@@ -19,6 +20,7 @@ const props = withDefaults(defineProps<Props>(), {
   description: '',
   isLoading: false,
   loadError: '',
+  existingOracleIds: () => [],
   primaryActionDisabled: false,
 })
 const emit = defineEmits<{
@@ -32,6 +34,7 @@ const emit = defineEmits<{
 const ROW_HEIGHT = 50
 const OVERSCAN = 10
 const listBody = ref<HTMLElement | null>(null)
+const existingOracleIdSet = computed(() => new Set(props.existingOracleIds))
 const startIndex = ref(0)
 const endIndex = ref(0)
 const loadedCardCount = computed(() => props.items.length)
@@ -40,6 +43,18 @@ const virtualHeight = computed(() => `${props.items.length * ROW_HEIGHT}px`)
 
 function formatScore(item: CollectionItem) {
   return item.commander_support_score ?? '—'
+}
+
+function isAlreadyInDeck(item: CollectionItem) {
+  return Boolean(item.oracle_id && existingOracleIdSet.value.has(item.oracle_id))
+}
+
+function isPrimaryActionDisabled(item: CollectionItem) {
+  return props.primaryActionDisabled || isAlreadyInDeck(item)
+}
+
+function primaryActionLabel(item: CollectionItem) {
+  return isAlreadyInDeck(item) ? "Already in Deck" : "Add to Deck"
 }
 
 function openContextMenu(event: MouseEvent, item: CollectionItem) {
@@ -62,12 +77,12 @@ function rowStyle(index: number) {
 }
 
 onMounted(() => {
-  window.addEventListener('scroll', updateVisibleRows, { passive: true })
+  window.addEventListener('scroll', updateVisibleRows, { passive: true, capture: true })
   window.addEventListener('resize', updateVisibleRows)
   void nextTick(updateVisibleRows)
 })
 onBeforeUnmount(() => {
-  window.removeEventListener('scroll', updateVisibleRows)
+  window.removeEventListener('scroll', updateVisibleRows, true)
   window.removeEventListener('resize', updateVisibleRows)
 })
 watch(() => [props.items.length, props.hasMore, props.isLoading], () => void nextTick(updateVisibleRows))
@@ -104,8 +119,8 @@ watch(() => [props.items.length, props.hasMore, props.isLoading], () => void nex
         >
           <strong class="score-value">{{ formatScore(item) }}</strong>
           <strong class="card-name">{{ item.name || 'Unknown Card' }}</strong>
-          <button class="add-button" type="button" :disabled="primaryActionDisabled" @click.stop="emit('primaryAction', item)">
-            Add to Deck
+          <button class="add-button" type="button" :disabled="isPrimaryActionDisabled(item)" @click.stop="emit('primaryAction', item)">
+            {{ primaryActionLabel(item) }}
           </button>
         </div>
       </div>

@@ -136,7 +136,7 @@ const formattedDeckValue = computed(() => new Intl.NumberFormat('en-US', {
           Create commander deck from collection
         </button>
         <button v-if="showCommanderBuilderResumeAction" class="primary-action" type="button" @click="$emit('openCommanderBuilder')">
-          Open Commander Builder
+          Browse Card Pool
         </button>
         <button v-if="showMasterSearchAction" class="secondary-action" type="button" @click="$emit('searchMasterCollection')">
           Advanced search this pool
@@ -303,4 +303,17 @@ h1 {
   cursor: wait;
   opacity: 0.65;
 }
+/* Compact deck identity and action toolbar */
+.collection-header { min-height: 0; padding: 18px 20px; border-radius: 20px; }
+.header-art { opacity: 0.18; filter: blur(18px) saturate(0.8); }
+.header-copy { max-width: none; display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: auto auto auto auto; align-items: center; column-gap: 22px; }
+.header-copy > .eyebrow, .header-copy > h1, .header-copy > .subtitle, .header-copy > .meta-row { grid-column: 1; }
+.header-copy > .eyebrow { grid-row: 1; margin-bottom: 4px; }
+.header-copy > h1 { grid-row: 2; font-size: clamp(1.4rem, 2.5vw, 2rem); }
+.header-copy > .subtitle { grid-row: 3; margin-top: 5px; }
+.header-copy > .meta-row { grid-row: 4; margin-top: 10px; }
+.header-copy > .deck-metrics { grid-column: 2; grid-row: 1; margin-top: 0; justify-self: end; }
+.header-copy > .action-row { grid-column: 2; grid-row: 2; margin-top: 4px; justify-self: end; }
+.header-copy > .legality-result { grid-column: 2; grid-row: 3 / span 2; margin-top: 8px; max-width: 620px; }
+@media (max-width: 780px) { .header-copy { grid-template-columns: 1fr; } .header-copy > .deck-metrics, .header-copy > .action-row, .header-copy > .legality-result { grid-column: 1; grid-row: auto; justify-self: start; } .header-copy > .deck-metrics { margin-top: 14px; } }
 </style>

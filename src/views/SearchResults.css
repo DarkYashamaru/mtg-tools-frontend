@@ -51,6 +51,57 @@
   color: var(--accent-electric);
 }
 
+.export-panel {
+  display: grid;
+  gap: 12px;
+  padding: 16px 18px;
+  border: 1px solid var(--surface-border-light);
+  border-radius: 16px;
+  background: var(--surface-card);
+  margin-bottom: 24px;
+}
+
+.export-title {
+  color: var(--text-light);
+  font-weight: 800;
+}
+
+.export-count,
+.export-message {
+  margin-left: 10px;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.export-description {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.export-actions {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.export-actions button {
+  padding: 9px 13px;
+  border: 1px solid var(--surface-border-light);
+  border-radius: 10px;
+  background: var(--surface-hover);
+  color: var(--text-main);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.export-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
 .error-msg-box {
   padding: 16px;
   background: var(--error-bg);

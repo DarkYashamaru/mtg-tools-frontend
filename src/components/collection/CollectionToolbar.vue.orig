@@ -339,20 +339,6 @@ watch(
         </div>
       </div>
 
-      <div v-if="showBasicLandAdjust" class="control-block">
-        <span class="control-label">Lands</span>
-        <div class="segmented">
-          <button
-            type="button"
-            class="segment"
-            :disabled="basicLandAdjustDisabled"
-            @click="emit('adjustBasicLands')"
-          >
-            Adjust basics
-          </button>
-        </div>
-      </div>
-
       <div class="control-block">
         <span class="control-label">Scope</span>
         <span class="control-value">

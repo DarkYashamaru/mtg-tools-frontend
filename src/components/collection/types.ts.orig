@@ -85,25 +85,6 @@ export type CollectionRecord = {
   items: CollectionItem[]
 }
 
-export type ManaColorCounts = Record<'W' | 'U' | 'B' | 'R' | 'G' | 'C', number>
-
-export type BasicLandAdjustment = {
-  target_land_count: number
-  current_land_count: number
-  preserved_land_count: number
-  current_basic_land_count: number
-  proposed_basic_land_count: number
-  reachable_land_count: number
-  target_reached: boolean
-  eligible_colors: Array<'W' | 'U' | 'B' | 'R' | 'G' | 'C'>
-  mana_demand: ManaColorCounts
-  existing_nonbasic_sources: ManaColorCounts
-  current_basics: ManaColorCounts
-  proposed_basics: ManaColorCounts
-  removed_off_identity: Partial<ManaColorCounts>
-  warning: string | null
-}
-
 export type DeckLegalityResult = {
   legal: boolean
   card_count: number
