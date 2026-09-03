@@ -32,7 +32,7 @@ interface Props {
 }
 
 const props = withDefaults(defineProps<Props>(), {
-  organizationMode: 'section',
+  organizationMode: 'zone',
   profileSections: () => [],
   hideSingletonAmount: false,
   enforceSingletonQuantities: false,
@@ -57,15 +57,22 @@ const emit = defineEmits<{
 }>()
 const totalCards = computed(() => props.items.reduce((sum, item) => sum + item.amount, 0))
 const isCollapsed = ref(props.initiallyCollapsed)
+const usesProfileSections = computed(() => (
+  props.organizationMode === 'category' || props.organizationMode === 'type'
+))
 const profileSectionGroups = computed(() => (
-  props.organizationMode === 'category'
-    ? groupCollectionItemsByProfileSection(props.items, props.profileSections)
+  usesProfileSections.value
+    ? groupCollectionItemsByProfileSection(
+        props.items,
+        props.profileSections,
+        props.organizationMode === 'category',
+      )
     : []
 ))
 </script>
 
 <template>
-  <div v-if="viewMode === 'list' && organizationMode === 'category' && profileSectionGroups.length" class="section-stack">
+  <div v-if="viewMode === 'list' && usesProfileSections && profileSectionGroups.length" class="section-stack">
     <CollectionListSection
       v-for="group in profileSectionGroups"
       :key="group.key"
@@ -141,7 +148,7 @@ const profileSectionGroups = computed(() => (
       {{ totalCards }} cards hidden
     </div>
 
-    <template v-else-if="organizationMode === 'category' && profileSectionGroups.length">
+    <template v-else-if="usesProfileSections && profileSectionGroups.length">
       <div class="section-stack">
         <section v-for="group in profileSectionGroups" :key="group.key" class="section-block">
           <header class="profile-section-header">

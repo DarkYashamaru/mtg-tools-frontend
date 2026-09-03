@@ -9,7 +9,7 @@ import { useAuthStore } from '@/stores/authStore'
 import type { GameplayCard } from '@/types/gameplayCard'
 
 type SourcePool = 'collection' | 'all'
-type SourceMode = 'sections' | 'spotlight'
+type SourceMode = 'categories' | 'types'
 
 type SourceEntry = {
   oracle_id: string
@@ -79,9 +79,11 @@ const sourceSummary = ref<SourceSummary | null>(null)
 const sourceNotice = ref('')
 const themeName = ref('')
 const selectedPool = ref<SourcePool>('collection')
-const sourceMode = ref<SourceMode>('sections')
-const tabsByPool = ref<Record<SourcePool, SourceTab[]>>({ collection: [], all: [] })
-const spotlightTabsByPool = ref<Record<SourcePool, SourceTab[]>>({ collection: [], all: [] })
+const sourceMode = ref<SourceMode>('categories')
+const tabsByMode = ref<Record<SourceMode, Record<SourcePool, SourceTab[]>>>({
+  categories: { collection: [], all: [] },
+  types: { collection: [], all: [] },
+})
 const activeTabKey = ref('ramp')
 const isInitializing = ref(false)
 const isLoadingAll = ref(false)
@@ -90,15 +92,17 @@ const hoveredItem = ref<CollectionItem | null>(null)
 const gameplayCache = new Map<string, GameplayCard>()
 let hoverClearTimeout: ReturnType<typeof window.setTimeout> | null = null
 
-const tabs = computed(() => (
-  sourceMode.value === 'spotlight' ? spotlightTabsByPool.value : tabsByPool.value
-)[selectedPool.value])
+const tabs = computed(() => tabsByMode.value[sourceMode.value][selectedPool.value])
 const activeTab = computed(() => tabs.value.find((tab) => tab.key === activeTabKey.value) ?? tabs.value[0])
 const themeLabel = computed(() => themeName.value || (props.themeId === -1 ? 'Custom Theme' : `Theme ${props.themeId}`))
 const displayedError = computed(() => errorMessage.value || props.actionError || '')
 
 function tabsFor(pool: SourcePool, mode: SourceMode) {
-  return (mode === 'spotlight' ? spotlightTabsByPool.value : tabsByPool.value)[pool]
+  return tabsByMode.value[mode][pool]
+}
+
+function firstTabKey(pool: SourcePool, mode: SourceMode) {
+  return tabsFor(pool, mode)[0]?.key ?? (mode === 'types' ? 'lands' : 'ramp')
 }
 
 function makeTab(section: MetadataSection): SourceTab {
@@ -154,7 +158,7 @@ async function parseResponse(response: Response, fallback: string) {
 
 function metadataEndpoint(pool: SourcePool, mode: SourceMode) {
   const base = `/api/commander-builder-source/${effectiveSourceId.value}/${props.commanderOracleId}`
-  return mode === 'spotlight' ? `${base}/spotlight?scope=${pool}` : `${base}?scope=${pool}`
+  return `${base}?scope=${pool}&profile_group=${mode}`
 }
 
 async function loadMetadata(pool: SourcePool, mode: SourceMode) {
@@ -163,41 +167,39 @@ async function loadMetadata(pool: SourcePool, mode: SourceMode) {
     'Unable to load source cards.',
   )
   if (data.source_collection) sourceSummary.value = data.source_collection as SourceSummary
-  const sections = (mode === 'spotlight' ? data.buckets : data.sections) as MetadataSection[] | undefined
+  const sections = data.sections as MetadataSection[] | undefined
   if (!Array.isArray(sections)) throw new Error('The source card response was incomplete.')
-  if (mode === 'spotlight') {
-    spotlightTabsByPool.value = { ...spotlightTabsByPool.value, [pool]: sections.map(makeTab) }
-  } else {
-    tabsByPool.value = { ...tabsByPool.value, [pool]: sections.map(makeTab) }
+  tabsByMode.value = {
+    ...tabsByMode.value,
+    [mode]: { ...tabsByMode.value[mode], [pool]: sections.map(makeTab) },
   }
 }
 
 function updateTab(pool: SourcePool, mode: SourceMode, key: string, update: (tab: SourceTab) => SourceTab) {
-  const target = mode === 'spotlight' ? spotlightTabsByPool : tabsByPool
-  target.value = {
-    ...target.value,
-    [pool]: target.value[pool].map((tab) => tab.key === key ? update(tab) : tab),
+  tabsByMode.value = {
+    ...tabsByMode.value,
+    [mode]: {
+      ...tabsByMode.value[mode],
+      [pool]: tabsByMode.value[mode][pool].map((tab) => tab.key === key ? update(tab) : tab),
+    },
   }
 }
 
 async function loadPage(pool: SourcePool, key: string) {
   const mode = sourceMode.value
-  const targetTabs = (mode === 'spotlight' ? spotlightTabsByPool.value : tabsByPool.value)[pool]
+  const targetTabs = tabsByMode.value[mode][pool]
   const tab = targetTabs.find((candidate) => candidate.key === key)
   if (!tab || tab.isLoading || (!tab.hasMore && tab.entries.length > 0)) return
   updateTab(pool, mode, key, (current) => ({ ...current, isLoading: true, loadError: '' }))
   try {
     const base = `/api/commander-builder-source/${effectiveSourceId.value}/${props.commanderOracleId}`
-    const selector = mode === 'spotlight'
-      ? `bucket=${encodeURIComponent(key)}`
-      : `section_key=${encodeURIComponent(key)}`
     const data = await parseResponse(
-      await fetch(`${base}${mode === 'spotlight' ? '/spotlight' : ''}?scope=${pool}&${selector}&offset=${tab.nextOffset}&limit=100`, {
+      await fetch(`${base}?scope=${pool}&profile_group=${mode}&section_key=${encodeURIComponent(key)}&offset=${tab.nextOffset}&limit=100`, {
         headers: { ...authHeaders.value },
       }),
       'Unable to load source cards.',
     )
-    const page = mode === 'spotlight' ? data.bucket : data.section
+    const page = data.section
     if (!page || !Array.isArray(page.entries)) throw new Error('The source page was incomplete.')
     updateTab(pool, mode, key, (current) => {
       const entries = [...current.entries, ...(page.entries as SourceEntry[])]
@@ -245,22 +247,24 @@ async function initialize() {
   errorMessage.value = ''
   sourceNotice.value = ''
   selectedPool.value = 'collection'
-  sourceMode.value = 'sections'
-  tabsByPool.value = { collection: [], all: [] }
-  spotlightTabsByPool.value = { collection: [], all: [] }
+  sourceMode.value = 'categories'
+  tabsByMode.value = {
+    categories: { collection: [], all: [] },
+    types: { collection: [], all: [] },
+  }
   sourceSummary.value = null
   effectiveSourceId.value = props.sourceCollectionId || 'master'
   await loadThemeName()
   try {
     try {
-      await loadMetadata('collection', 'sections')
+      await loadMetadata('collection', 'categories')
     } catch (error) {
       if (effectiveSourceId.value === 'master') throw error
       effectiveSourceId.value = 'master'
       sourceNotice.value = 'The saved source collection is unavailable. Using Master Collection instead.'
-      await loadMetadata('collection', 'sections')
+      await loadMetadata('collection', 'categories')
     }
-    activeTabKey.value = tabsByPool.value.collection[0]?.key ?? 'ramp'
+    activeTabKey.value = firstTabKey('collection', 'categories')
     if (activeTabKey.value) await loadPage('collection', activeTabKey.value)
     await nextTick(() => dialog.value?.focus())
   } catch (error) {
@@ -278,7 +282,7 @@ async function selectPool(pool: SourcePool) {
   try {
     if (tabsFor(pool, sourceMode.value).length === 0) await loadMetadata(pool, sourceMode.value)
     selectedPool.value = pool
-    activeTabKey.value = tabsFor(pool, sourceMode.value)[0]?.key ?? 'ramp'
+    activeTabKey.value = firstTabKey(pool, sourceMode.value)
     if (activeTabKey.value) await loadPage(pool, activeTabKey.value)
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : 'Unable to load this card pool.'
@@ -294,7 +298,7 @@ async function selectMode(mode: SourceMode) {
   try {
     if (tabsFor(selectedPool.value, mode).length === 0) await loadMetadata(selectedPool.value, mode)
     sourceMode.value = mode
-    activeTabKey.value = tabsFor(selectedPool.value, mode)[0]?.key ?? 'ramp'
+    activeTabKey.value = firstTabKey(selectedPool.value, mode)
     if (activeTabKey.value) await loadPage(selectedPool.value, activeTabKey.value)
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : 'Unable to load this source view.'
@@ -373,10 +377,12 @@ watch(() => props.open, (open) => {
   else clearHoveredItem()
 }, { immediate: true })
 watch(() => [props.sourceCollectionId, props.commanderOracleId, props.themeId], () => {
-  tabsByPool.value = { collection: [], all: [] }
-  spotlightTabsByPool.value = { collection: [], all: [] }
+  tabsByMode.value = {
+    categories: { collection: [], all: [] },
+    types: { collection: [], all: [] },
+  }
   selectedPool.value = 'collection'
-  sourceMode.value = 'sections'
+  sourceMode.value = 'categories'
   sourceSummary.value = null
   themeName.value = ''
   clearHoveredItem()
@@ -414,8 +420,8 @@ onBeforeUnmount(() => {
             </button>
           </div>
           <div class="segmented" role="group" aria-label="Source view">
-            <button :class="{ active: sourceMode === 'sections' }" type="button" @click="selectMode('sections')">Role Sections</button>
-            <button :class="{ active: sourceMode === 'spotlight' }" type="button" @click="selectMode('spotlight')">Commander Spotlight</button>
+            <button :class="{ active: sourceMode === 'categories' }" type="button" @click="selectMode('categories')">Categories</button>
+            <button :class="{ active: sourceMode === 'types' }" type="button" @click="selectMode('types')">Types</button>
           </div>
         </div>
 
@@ -431,7 +437,7 @@ onBeforeUnmount(() => {
           <div class="source-list-area">
             <CommanderBuilderSourceList
               :title="activeTab.title"
-              :eyebrow="sourceMode === 'spotlight' ? 'Commander Support' : activeTab.key"
+              :eyebrow="sourceMode === 'categories' ? 'Category' : 'Card Type'"
               :description="activeTab.description"
               :items="activeTab.items"
               :total-items="activeTab.entryTotal"

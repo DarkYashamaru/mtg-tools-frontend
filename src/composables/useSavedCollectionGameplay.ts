@@ -60,30 +60,50 @@ export async function loadSavedCollectionGameplay({
   }
 
   const selectedCollection = collectionPayload.collection as CollectionRecord
-  const deckText = selectedCollection.items
-    .flatMap((item) => {
-      if (!item.name || item.amount < 1) {
-        return []
-      }
+  const oracleIds = Array.from(
+    new Set(
+      selectedCollection.items
+        .map((item) => item.oracle_id?.trim())
+        .filter((value): value is string => Boolean(value)),
+    ),
+  )
 
-      return Array.from({ length: item.amount }, () => `1 ${item.name}`)
-    })
-    .join('\n')
-
-  if (!deckText) {
-    throw new Error('This collection has no importable card names.')
+  if (oracleIds.length === 0) {
+    throw new Error('This collection has no cards with Oracle IDs.')
   }
 
   const cardsResponse = await fetch('/api/deck-cards', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ deck_text: deckText }),
+    body: JSON.stringify({ oracle_ids: oracleIds }),
   })
 
   const cardsPayload = await cardsResponse.json().catch(() => ({}))
 
   if (!cardsResponse.ok || !cardsPayload.success || !Array.isArray(cardsPayload.cards)) {
-    throw new Error(cardsPayload.error || 'Unable to load gameplay cards for this collection.')
+    const missingIds = Array.isArray(cardsPayload.missing_oracle_ids)
+      ? cardsPayload.missing_oracle_ids.filter(
+          (value: unknown): value is string => typeof value === 'string',
+        )
+      : []
+    const namesByOracleId = new Map(
+      selectedCollection.items
+        .filter((item) => item.oracle_id)
+        .map((item) => [
+          item.oracle_id as string,
+          item.name || 'Unknown card',
+        ]),
+    )
+    const missingLabels = missingIds.map(
+      (oracleId: string) =>
+        `${namesByOracleId.get(oracleId) || 'Unknown card'} (${oracleId})`,
+    )
+
+    throw new Error(
+      missingLabels.length > 0
+        ? `Gameplay data is missing for: ${missingLabels.join(', ')}`
+        : cardsPayload.error || 'Unable to load gameplay cards for this collection.',
+    )
   }
 
   return {

@@ -319,7 +319,6 @@ async function startConstructingDeck() {
         deck_text: `Commander\n1 ${activeCommander.value.name}`,
         builder_source_collection_id: activeCollectionId.value,
         builder_theme_id: activeThemeId.value,
-        include_in_master: false,
       }),
     })
     const data = await response.json().catch(() => ({}))
@@ -459,7 +458,7 @@ onMounted(() => { loadSelectedThemePage() })
             :description="group.description"
             :items="group.items"
             view-mode="grid"
-            organization-mode="zone"
+            organization-mode="section"
             :show-quantity-actions="false"
             :hide-singleton-amount="true"
             collapsible
@@ -476,7 +475,7 @@ onMounted(() => { loadSelectedThemePage() })
             :description="sectionDescription(group)"
             :items="group.items"
             view-mode="grid"
-            organization-mode="zone"
+            organization-mode="section"
             :show-quantity-actions="false"
             :hide-singleton-amount="true"
             collapsible

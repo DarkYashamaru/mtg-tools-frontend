@@ -187,6 +187,7 @@ async function updateMasterInclusion(collection: CollectionSummary, event: Event
   }
 }
 
+
 function promptDeleteCollection(collectionId: string | number) {
   pendingDeleteCollectionId.value = collectionId
   errorMessage.value = ''

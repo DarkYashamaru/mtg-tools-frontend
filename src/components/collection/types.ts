@@ -71,6 +71,7 @@ export type CollectionRecord = {
   user_id: number
   name: string
   deck_type: string
+  include_in_master: boolean
   builder_source_collection_id?: string | null
   builder_theme_id?: number | null
   commander_cards?: CollectionCommanderCard[]
@@ -121,7 +122,7 @@ export type DeckLegalityResult = {
 }
 
 export type WorkspaceViewMode = 'grid' | 'list'
-export type WorkspaceOrganizationMode = 'section' | 'category'
+export type WorkspaceOrganizationMode = 'zone' | 'category' | 'type'
 export type CommanderWorkspaceMode = 'normal' | 'template'
 export type CollectionSortKey = 'name' | 'mana-value' | 'rarity' | 'score' | 'usd-price'
 export type CollectionSortDirection = 'asc' | 'desc'

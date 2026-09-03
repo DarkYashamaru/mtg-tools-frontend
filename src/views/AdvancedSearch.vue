@@ -11,6 +11,8 @@ const { isAuthenticated } = storeToRefs(authStore)
 
 const name = ref('')
 const cardType = ref('')
+const cmcMin = ref<number | ''>('')
+const cmcMax = ref<number | ''>('')
 const oracleText = ref('')
 const excludeOracleText = ref('')
 const tags = ref('')
@@ -54,6 +56,8 @@ function clearFilters() {
   cardType.value = ''
   oracleText.value = ''
   excludeOracleText.value = ''
+  cmcMin.value = ''
+  cmcMax.value = ''
   tags.value = ''
   excludeTags.value = ''
   markers.value = ''
@@ -73,6 +77,8 @@ function runSearch() {
   if (excludeOracleText.value.trim()) queryPayload.exclude_oracle_text = excludeOracleText.value.trim()
   if (tags.value.trim()) queryPayload.tags = tags.value.trim()
   if (excludeTags.value.trim()) queryPayload.exclude_tags = excludeTags.value.trim()
+  if (cmcMin.value !== '') queryPayload.cmc_min = String(cmcMin.value)
+  if (cmcMax.value !== '') queryPayload.cmc_max = String(cmcMax.value)
   if (markers.value.trim()) queryPayload.markers = markers.value.trim()
   if (excludeMarkers.value.trim()) queryPayload.exclude_markers = excludeMarkers.value.trim()
   if (exactColors.value) queryPayload.exact_colors = 'true'
@@ -112,6 +118,16 @@ watchEffect(() => {
         </div>
 
         <div class="field">
+          <label for="cmc-min">Minimum Mana Value (CMC)</label>
+          <input id="cmc-min" v-model.number="cmcMin" type="number" min="0" step="any" placeholder="e.g., 4">
+        </div>
+
+        <div class="field">
+          <label for="cmc-max">Maximum Mana Value (CMC)</label>
+          <input id="cmc-max" v-model.number="cmcMax" type="number" :min="cmcMin || 0" step="any" placeholder="e.g., 6">
+        </div>
+
+        <div class="field">
           <label for="oracle-inc">Oracle Text Includes</label>
           <input id="oracle-inc" v-model="oracleText" placeholder="draw, counter, copy">
         </div>
@@ -123,12 +139,14 @@ watchEffect(() => {
 
         <div class="field">
           <label for="tags-inc">Tags Includes</label>
-          <input id="tags-inc" v-model="tags" placeholder="removal, card-draw">
+          <input id="tags-inc" v-model="tags" placeholder='bounceland, "draw-engine"'>
+          <small class="field-hint">Unquoted terms match tags containing the text. Use quotes for an exact tag.</small>
         </div>
 
         <div class="field">
           <label for="tags-exc">Tags Excludes</label>
-          <input id="tags-exc" v-model="excludeTags" placeholder="stax, combo-piece">
+          <input id="tags-exc" v-model="excludeTags" placeholder='stax, "combo-piece"'>
+          <small class="field-hint">Exclusions use the same partial or quoted-exact matching.</small>
         </div>
 
         <div class="field">

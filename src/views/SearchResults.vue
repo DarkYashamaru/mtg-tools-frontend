@@ -96,6 +96,8 @@ async function executeSearchFetch() {
 
     if (q.name) params.append('name', String(q.name).trim())
     if (q.card_type) params.append('card_type', String(q.card_type).trim())
+    appendValue(params, 'cmc_min', q.cmc_min)
+    appendValue(params, 'cmc_max', q.cmc_max)
 
     // Do not split by commas here.
     appendValue(params, 'oracle_text', q.oracle_text)

@@ -366,10 +366,10 @@ watch(
           <button
             type="button"
             class="segment"
-            :class="{ active: organizationMode === 'section' }"
-            @click="setOrganizationMode('section')"
+            :class="{ active: organizationMode === 'zone' }"
+            @click="setOrganizationMode('zone')"
           >
-            Sections
+            Zones
           </button>
           <button
             type="button"
@@ -378,6 +378,14 @@ watch(
             @click="setOrganizationMode('category')"
           >
             Categories
+          </button>
+          <button
+            type="button"
+            class="segment"
+            :class="{ active: organizationMode === 'type' }"
+            @click="setOrganizationMode('type')"
+          >
+            Types
           </button>
         </div>
       </div>

@@ -340,38 +340,6 @@ h1 {
   font-family: SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace;
 }
 
-.master-inclusion-option {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  margin-bottom: 20px;
-  padding: 16px;
-  border: 1px solid var(--accent-electric-border);
-  border-radius: 16px;
-  background: rgba(56, 189, 248, 0.06);
-  cursor: pointer;
-}
-
-.master-inclusion-option input {
-  width: auto;
-  margin: 4px 0 0;
-  accent-color: var(--accent-electric);
-}
-
-.master-inclusion-option span {
-  display: grid;
-  gap: 4px;
-}
-
-.master-inclusion-option strong {
-  color: var(--text-light);
-}
-
-.master-inclusion-option small {
-  color: var(--text-muted);
-  line-height: 1.55;
-}
-
 .format-note {
   margin-bottom: 20px;
   padding: 14px 16px;
