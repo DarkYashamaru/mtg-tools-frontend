@@ -158,7 +158,7 @@ async function parseResponse(response: Response, fallback: string) {
 
 function metadataEndpoint(pool: SourcePool, mode: SourceMode) {
   const base = `/api/commander-builder-source/${effectiveSourceId.value}/${props.commanderOracleId}`
-  return `${base}?scope=${pool}&profile_group=${mode}`
+  return `${base}?scope=${pool}&profile_group=${mode}&theme_id=${props.themeId}`
 }
 
 async function loadMetadata(pool: SourcePool, mode: SourceMode) {
@@ -194,7 +194,7 @@ async function loadPage(pool: SourcePool, key: string) {
   try {
     const base = `/api/commander-builder-source/${effectiveSourceId.value}/${props.commanderOracleId}`
     const data = await parseResponse(
-      await fetch(`${base}?scope=${pool}&profile_group=${mode}&section_key=${encodeURIComponent(key)}&offset=${tab.nextOffset}&limit=100`, {
+      await fetch(`${base}?scope=${pool}&profile_group=${mode}&theme_id=${props.themeId}&section_key=${encodeURIComponent(key)}&offset=${tab.nextOffset}&limit=100`, {
         headers: { ...authHeaders.value },
       }),
       'Unable to load source cards.',

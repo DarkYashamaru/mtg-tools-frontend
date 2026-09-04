@@ -121,6 +121,14 @@ async function loadCollectionScopedThemePage() {
     }
 
     rawCommanderThemes.value = await response.json()
+    if (rawCommanderThemes.value.length === 0) {
+      const fallbackResponse = await fetch('/api/theme-profiles')
+      const fallbackPayload = await fallbackResponse.json().catch(() => ({}))
+      if (!fallbackResponse.ok || !fallbackPayload.success || !Array.isArray(fallbackPayload.themes)) {
+        throw new Error(fallbackPayload.error || 'Failed to load fallback theme profiles.')
+      }
+      rawCommanderThemes.value = fallbackPayload.themes
+    }
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : 'Unable to load theme data.'
   } finally {

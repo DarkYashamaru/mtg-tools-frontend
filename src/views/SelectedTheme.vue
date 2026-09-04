@@ -172,8 +172,15 @@ async function loadSelectedThemePage() {
       activeTheme.value = Array.isArray(themes)
         ? themes.find((theme) => Number(theme.theme_id) === activeThemeId.value) ?? null
         : null
+      if (!activeTheme.value) {
+        const fallbackResponse = await fetch('/api/theme-profiles')
+        const fallbackPayload = await fallbackResponse.json().catch(() => ({}))
+        activeTheme.value = Array.isArray(fallbackPayload.themes)
+          ? fallbackPayload.themes.find((theme: CardThemeResponse) => Number(theme.theme_id) === activeThemeId.value) ?? null
+          : null
+      }
     }
-    if (!activeTheme.value) throw new Error('The selected theme was not found for this commander.')
+    if (!activeTheme.value) throw new Error('The selected theme was not found.')
 
     store.setSelectedTheme(activeTheme.value)
     collectionOverview.value = await loadOverview('collection')
@@ -186,8 +193,9 @@ async function loadSelectedThemePage() {
 
 async function loadOverview(pool: CardPool): Promise<OverviewResponse> {
   if (!activeCollectionId.value || !activeCommander.value) throw new Error('Commander overview is unavailable.')
+  const themeQuery = activeThemeId.value === null ? '' : `&theme_id=${activeThemeId.value}`
   const response = await fetch(
-    `/api/commander-overview/${activeCollectionId.value}/${activeCommander.value.oracle_id}?scope=${pool}`,
+    `/api/commander-overview/${activeCollectionId.value}/${activeCommander.value.oracle_id}?scope=${pool}${themeQuery}`,
     { headers: { ...authHeaders.value } },
   )
   const payload = await response.json().catch(() => null)

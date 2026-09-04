@@ -931,6 +931,7 @@ async function loadCommanderScores() {
 
         body: JSON.stringify({
           oracle_ids: oracleIds,
+          theme_id: builderThemeId.value,
         }),
       },
     )

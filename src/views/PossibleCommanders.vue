@@ -21,6 +21,14 @@ const { collection, validCommanders } = storeToRefs(store)
 const { authHeaders } = storeToRefs(authStore)
 const isLoading = ref(false)
 const errorMessage = ref('')
+const rarityByOracleId = ref<Map<string, string>>(new Map())
+
+const RARITY_SCORE: Record<string, number> = {
+  common: 0,
+  uncommon: 1,
+  rare: 2,
+  mythic: 3,
+}
 
 const activeCollectionId = computed(() => {
   const rawValue = route.params.collectionId
@@ -30,8 +38,8 @@ const activeCollectionId = computed(() => {
 type CommanderInsight = {
   commander: GameplayCard
   cardsInColorIdentity: number
-  sharedArchetypeCards: number
-  sharedCategoryCards: number
+  rarity: string | null
+  rarityScore: number
 }
 
 function getColorIdentitySet(card: GameplayCard): Set<string> {
@@ -43,12 +51,26 @@ function isColorIdentityLegal(commander: GameplayCard, candidate: GameplayCard):
   return candidate.color_identity.every((color) => commanderColors.has(color.symbol.toUpperCase()))
 }
 
-function getCardNameSet(values: Array<{ name: string }>): Set<string> {
-  return new Set(
-    values
-      .map((value) => value?.name?.trim())
-      .filter((value): value is string => !!value)
-  )
+function normalizedRarity(value: string | null | undefined): string | null {
+  const rarity = value?.trim().toLowerCase()
+  return rarity && rarity in RARITY_SCORE ? rarity : null
+}
+
+function highestRarityByOracleId(items: CollectionItem[]): Map<string, string> {
+  const rarities = new Map<string, string>()
+
+  for (const item of items) {
+    const oracleId = item.oracle_id?.trim()
+    const rarity = normalizedRarity(item.rarity)
+    if (!oracleId || !rarity) continue
+
+    const currentRarity = rarities.get(oracleId)
+    if (!currentRarity || RARITY_SCORE[rarity] > RARITY_SCORE[currentRarity]) {
+      rarities.set(oracleId, rarity)
+    }
+  }
+
+  return rarities
 }
 
 const commanderInsights = computed<CommanderInsight[]>(() => {
@@ -58,12 +80,7 @@ const commanderInsights = computed<CommanderInsight[]>(() => {
 
   return validCommanders.value
     .map((commander) => {
-      const commanderArchetypes = getCardNameSet(commander.archetypes)
-      const commanderCategories = getCardNameSet(commander.categories)
-
       let cardsInColorIdentity = 0
-      let sharedArchetypeCards = 0
-      let sharedCategoryCards = 0
 
       for (const candidate of collection.value) {
         if (candidate.oracle_id === commander.oracle_id) {
@@ -75,30 +92,20 @@ const commanderInsights = computed<CommanderInsight[]>(() => {
         }
 
         cardsInColorIdentity += 1
-
-        const candidateArchetypes = getCardNameSet(candidate.archetypes)
-        const candidateCategories = getCardNameSet(candidate.categories)
-
-        if ([...candidateArchetypes].some((name) => commanderArchetypes.has(name))) {
-          sharedArchetypeCards += 1
-        }
-
-        if ([...candidateCategories].some((name) => commanderCategories.has(name))) {
-          sharedCategoryCards += 1
-        }
       }
+
+      const rarity = rarityByOracleId.value.get(commander.oracle_id) ?? null
 
       return {
         commander,
         cardsInColorIdentity,
-        sharedArchetypeCards,
-        sharedCategoryCards,
+        rarity,
+        rarityScore: rarity ? RARITY_SCORE[rarity] : 0,
       }
     })
     .sort((left, right) =>
       right.cardsInColorIdentity - left.cardsInColorIdentity
-      || right.sharedArchetypeCards - left.sharedArchetypeCards
-      || right.sharedCategoryCards - left.sharedCategoryCards
+      || right.rarityScore - left.rarityScore
       || left.commander.name.localeCompare(right.commander.name)
     )
 })
@@ -112,6 +119,7 @@ const commanderItems = computed<CollectionItem[]>(() => (
     cmc: item.commander.cmc ?? 0,
     card_types: Array.from(new Set(item.commander.faces.flatMap((face) => face.card_types ?? []))),
     color_identity: item.commander.color_identity,
+    rarity: item.rarity,
     set_code: null,
     collector_number: null,
     lang: null,
@@ -120,8 +128,7 @@ const commanderItems = computed<CollectionItem[]>(() => (
     zone: 'commander',
     card_insights: [
       { label: 'Cards in color identity', value: item.cardsInColorIdentity },
-      { label: 'Cards sharing archetype', value: item.sharedArchetypeCards },
-      { label: 'Cards sharing category', value: item.sharedCategoryCards },
+      { label: 'Rarity score', value: item.rarityScore },
     ],
   }))
 ))
@@ -148,15 +155,17 @@ async function loadValidatedCommanderCandidates(cards: GameplayCard[]) {
 async function loadCollectionFromBackend(collectionId: string) {
   isLoading.value = true
   errorMessage.value = ''
+  rarityByOracleId.value = new Map()
   store.clearStore()
 
   try {
-    const { cards } = await loadSavedCollectionGameplay({
+    const { collection: savedCollection, cards } = await loadSavedCollectionGameplay({
       collectionId,
       authHeaders,
       routePath: route.fullPath,
       router,
     })
+    rarityByOracleId.value = highestRarityByOracleId(savedCollection.items)
     store.setCollection(cards)
     await loadValidatedCommanderCandidates(cards)
   } catch (error) {
@@ -211,7 +220,7 @@ onMounted(() => {
     <div class="header-action-row">
       <div>
         <h1>Possible Commanders</h1>
-        <p class="description">Select a commander to inspect theme support from the cards available in this collection.</p>
+        <p class="description">Commander candidates are ranked by cards in their color identity, then by rarity.</p>
       </div>
       <button class="nav-back-btn" @click="goBackToImporter">← Import Different Deck</button>
     </div>
@@ -237,7 +246,7 @@ onMounted(() => {
         <DeckSection
           title="Commander Candidates"
           eyebrow="Collection analysis"
-          description="Choose a commander to inspect its theme support."
+          description="Ranked by color-identity coverage, then rarity."
           :items="commanderItems"
           view-mode="grid"
           organization-mode="zone"
