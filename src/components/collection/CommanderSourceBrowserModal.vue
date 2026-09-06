@@ -88,9 +88,8 @@ const activeTabKey = ref('ramp')
 const isInitializing = ref(false)
 const isLoadingAll = ref(false)
 const errorMessage = ref('')
-const hoveredItem = ref<CollectionItem | null>(null)
+const selectedPreviewItem = ref<CollectionItem | null>(null)
 const gameplayCache = new Map<string, GameplayCard>()
-let hoverClearTimeout: ReturnType<typeof window.setTimeout> | null = null
 
 const tabs = computed(() => tabsByMode.value[sourceMode.value][selectedPool.value])
 const activeTab = computed(() => tabs.value.find((tab) => tab.key === activeTabKey.value) ?? tabs.value[0])
@@ -243,7 +242,7 @@ async function loadThemeName() {
 async function initialize() {
   if (!props.open || !props.commanderOracleId || isInitializing.value) return
   isInitializing.value = true
-  clearHoveredItem()
+  clearPreviewItem()
   errorMessage.value = ''
   sourceNotice.value = ''
   selectedPool.value = 'collection'
@@ -276,7 +275,7 @@ async function initialize() {
 
 async function selectPool(pool: SourcePool) {
   if (selectedPool.value === pool) return
-  clearHoveredItem()
+  clearPreviewItem()
   isLoadingAll.value = pool === 'all'
   errorMessage.value = ''
   try {
@@ -293,7 +292,7 @@ async function selectPool(pool: SourcePool) {
 
 async function selectMode(mode: SourceMode) {
   if (sourceMode.value === mode) return
-  clearHoveredItem()
+  clearPreviewItem()
   errorMessage.value = ''
   try {
     if (tabsFor(selectedPool.value, mode).length === 0) await loadMetadata(selectedPool.value, mode)
@@ -306,37 +305,19 @@ async function selectMode(mode: SourceMode) {
 }
 
 async function selectTab(key: string) {
-  clearHoveredItem()
+  clearPreviewItem()
   activeTabKey.value = key
   await loadPage(selectedPool.value, key)
 }
 
-function cancelHoverClear() {
-  if (hoverClearTimeout === null) return
-  window.clearTimeout(hoverClearTimeout)
-  hoverClearTimeout = null
+function clearPreviewItem() {
+  selectedPreviewItem.value = null
 }
 
-function clearHoveredItem() {
-  cancelHoverClear()
-  hoveredItem.value = null
-}
-
-function scheduleHoveredItemClear() {
-  cancelHoverClear()
-  hoverClearTimeout = window.setTimeout(() => {
-    hoveredItem.value = null
-    hoverClearTimeout = null
-  }, 180)
-}
-
-async function hoverItem(item: CollectionItem | null) {
-  if (!item) {
-    scheduleHoveredItemClear()
-    return
-  }
-  cancelHoverClear()
-  hoveredItem.value = item
+async function selectPreviewItem(item: CollectionItem | null) {
+  // Keep the latest row selected when the pointer or focus leaves the list.
+  if (!item) return
+  selectedPreviewItem.value = item
   if (!item.oracle_id || item.gameplay_card) return
   const cached = gameplayCache.get(item.oracle_id)
   if (cached) {
@@ -352,6 +333,11 @@ async function hoverItem(item: CollectionItem | null) {
   } catch {
     // The scored row remains usable when optional preview hydration fails.
   }
+}
+
+async function openSelectedCard(item: CollectionItem) {
+  await selectPreviewItem(item)
+  emit('openCard', item)
 }
 
 function handleKeydown(event: KeyboardEvent) {
@@ -374,7 +360,7 @@ function handleKeydown(event: KeyboardEvent) {
 watch(() => props.open, (open) => {
   document.body.style.overflow = open ? 'hidden' : ''
   if (open) void initialize()
-  else clearHoveredItem()
+  else clearPreviewItem()
 }, { immediate: true })
 watch(() => [props.sourceCollectionId, props.commanderOracleId, props.themeId], () => {
   tabsByMode.value = {
@@ -385,13 +371,12 @@ watch(() => [props.sourceCollectionId, props.commanderOracleId, props.themeId], 
   sourceMode.value = 'categories'
   sourceSummary.value = null
   themeName.value = ''
-  clearHoveredItem()
+  clearPreviewItem()
   if (props.open) void initialize()
 })
 
 onMounted(() => window.addEventListener('keydown', handleKeydown))
 onBeforeUnmount(() => {
-  cancelHoverClear()
   window.removeEventListener('keydown', handleKeydown)
   document.body.style.overflow = ''
 })
@@ -446,28 +431,20 @@ onBeforeUnmount(() => {
               :load-error="activeTab.loadError"
               :existing-oracle-ids="deckOracleIds"
               :primary-action-disabled="addingCard"
-              @hover-item="hoverItem"
-              @card-click="emit('openCard', $event)"
+              @hover-item="selectPreviewItem"
+              @card-click="openSelectedCard"
               @primary-action="emit('addCard', $event)"
               @load-more="loadPage(selectedPool, activeTab.key)"
             />
           </div>
 
           <aside class="preview-area">
-            <CommanderBuilderHoverPreview :item="hoveredItem" variant="card" />
+            <CommanderBuilderHoverPreview :item="selectedPreviewItem" variant="card" />
           </aside>
-        </div>
-        <div
-          v-if="hoveredItem"
-          class="score-hover-window"
-          tabindex="0"
-          :aria-label="`Score details for ${hoveredItem.name || 'hovered card'}`"
-          @mouseenter="cancelHoverClear"
-          @mouseleave="scheduleHoveredItemClear"
-          @focusin="cancelHoverClear"
-          @focusout="scheduleHoveredItemClear"
-        >
-          <CommanderBuilderHoverPreview :item="hoveredItem" variant="score" />
+
+          <aside class="score-area" aria-live="polite">
+            <CommanderBuilderHoverPreview :item="selectedPreviewItem" variant="score" />
+          </aside>
         </div>
       </section>
     </div>
@@ -750,160 +727,67 @@ onBeforeUnmount(() => {
  * ------------------------------------------------------------------ */
 
 .modal-content {
-  /*
-   * This is the only part of the modal that should consume the
-   * remaining available height.
-   */
   flex: 1 1 auto;
-
   display: grid;
-
-  grid-template-columns:
-    minmax(0, 1fr)
-    clamp(300px, 21vw, 380px);
-
+  grid-template-columns: minmax(0, 1fr) clamp(250px, 19vw, 340px) clamp(270px, 20vw, 360px);
   align-items: start;
-
-  gap: 20px;
-
+  gap: 16px;
   min-width: 0;
   min-height: 0;
-
-  /*
-   * Header, controls and tabs remain outside the scrolling area.
-   */
   overflow-x: hidden;
   overflow-y: auto;
-
   padding: 0 24px 24px;
-
   overscroll-behavior: contain;
 }
 
-
-/*
- * This wrapper is important.
- *
- * Grid children have min-width:auto by default, which means that
- * sufficiently wide content inside CommanderBuilderSourceList can
- * force the grid wider and overlap the preview column.
- */
-.source-list-area {
+.source-list-area,
+.preview-area,
+.score-area {
   min-width: 0;
   width: 100%;
 }
 
-
-/*
- * Keep the card preview visible while scrolling through a large
- * collection.
- */
-.preview-area {
+.preview-area,
+.score-area {
   position: sticky;
   top: 0;
-
   align-self: start;
-
-  min-width: 0;
-  width: 100%;
 }
 
-
-/* Prevent child components from escaping their grid columns. */
-
-.modal-content :deep(.source-list-shell) {
+.modal-content :deep(.source-list-shell),
+.preview-area :deep(.commander-builder-preview-panel),
+.score-area :deep(.commander-builder-preview-panel) {
+  box-sizing: border-box;
   width: 100%;
   min-width: 0;
   max-width: 100%;
-
-  box-sizing: border-box;
 }
 
-.preview-area :deep(.commander-builder-preview-panel) {
-  width: 100%;
-  min-width: 0;
-  max-width: 100%;
-
-  box-sizing: border-box;
-}
-
-
-/*
- * If the preview component previously used position:absolute/fixed,
- * make the modal's preview wrapper responsible for positioning it.
- */
-.preview-area :deep(.commander-builder-preview-panel) {
+.preview-area :deep(.commander-builder-preview-panel),
+.score-area :deep(.commander-builder-preview-panel) {
   position: relative;
   inset: auto;
 }
 
-
-.score-hover-window {
-  position: absolute;
-  z-index: 1510;
-
-  top: 50%;
-  left: 32px;
-
-  width: clamp(300px, 22vw, 390px);
-  max-height: calc(100% - 64px);
-
-  overflow-x: hidden;
-  overflow-y: auto;
-
-  transform: translateY(-50%);
-  overscroll-behavior: contain;
-  scrollbar-width: thin;
-  outline: none;
-}
-
-.score-hover-window:focus-visible {
-  outline: 2px solid var(--accent-electric);
-  outline-offset: 3px;
-}
-
-.score-hover-window :deep(.commander-builder-preview-panel) {
-  position: static;
-  inset: auto;
-  width: 100%;
-  min-width: 0;
-  max-width: 100%;
-}
-
-/* ------------------------------------------------------------------
- * Medium screens
- *
- * At this point keeping a 300px+ preview column makes the actual
- * card list unnecessarily cramped. Hide hover preview before that
- * becomes a problem.
- * ------------------------------------------------------------------ */
-
-@media (max-width: 1100px) {
+@media (max-width: 1320px) {
   .modal-content {
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr) minmax(250px, 330px);
+  }
+
+  .preview-area,
+  .score-area {
+    position: static;
   }
 
   .preview-area {
-    display: none;
+    grid-column: 1;
   }
 
-  .score-hover-window {
-    top: auto;
-    right: clamp(144px, 18vw, 180px);
-    bottom: 24px;
-    left: 24px;
-
-    width: auto;
-    max-height: min(42dvh, 420px);
-    transform: none;
+  .score-area {
+    grid-column: 2;
+    grid-row: 1 / span 2;
   }
 }
-
-
-/* ------------------------------------------------------------------
- * Mobile / small tablet
- * ------------------------------------------------------------------ */
-
 @media (max-width: 700px) {
   .modal-backdrop {
     padding: 0;
@@ -970,16 +854,18 @@ onBeforeUnmount(() => {
   }
 
   .modal-content {
-    gap: 0;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 16px;
 
     padding-right: 16px;
     padding-bottom: 16px;
     padding-left: 16px;
   }
 
-  .score-hover-window {
-    bottom: 16px;
-    left: 16px;
+  .preview-area,
+  .score-area {
+    grid-column: auto;
+    grid-row: auto;
   }
 }
 
@@ -989,10 +875,6 @@ onBeforeUnmount(() => {
 @media (max-width: 480px) {
   .segmented {
     grid-template-columns: 1fr;
-  }
-
-  .score-hover-window {
-    right: 124px;
   }
 }
 </style>

@@ -1,13 +1,19 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import type { CollectionRecord } from './types'
 import { activeDeckItems, calculateManaColorMetrics } from './manaMetrics'
 
 interface Props {
   collection: CollectionRecord
+  collapsible?: boolean
+  initiallyCollapsed?: boolean
 }
 
-const props = defineProps<Props>()
+const props = withDefaults(defineProps<Props>(), {
+  collapsible: false,
+  initiallyCollapsed: false,
+})
+const isCollapsed = ref(props.collapsible && props.initiallyCollapsed)
 
 type ManaBucket = {
   label: string
@@ -106,7 +112,8 @@ function formatManaValue(value: number) {
         <h2>Deck Breakdown</h2>
       </div>
 
-      <div class="summary-grid">
+      <div class="header-actions">
+        <div class="summary-grid">
         <div class="summary-pill">
           <span class="summary-label">Avg Mana Value</span>
           <strong>{{ averageManaValue.toFixed(2) }}</strong>
@@ -120,9 +127,20 @@ function formatManaValue(value: number) {
           <strong>{{ totalCards }}</strong>
         </div>
       </div>
+        <button
+          v-if="collapsible"
+          class="curve-toggle"
+          type="button"
+          :aria-expanded="!isCollapsed"
+          aria-controls="deck-breakdown-charts"
+          @click="isCollapsed = !isCollapsed"
+        >
+          {{ isCollapsed ? 'Show charts' : 'Hide charts' }}
+        </button>
+      </div>
     </header>
 
-    <div class="chart-grid">
+    <div v-if="!isCollapsed" id="deck-breakdown-charts" class="chart-grid">
       <section class="chart-panel">
         <header class="panel-header">
           <h3>Mana Curve</h3>
@@ -260,6 +278,31 @@ h2 {
   display: flex;
   gap: 10px;
   flex-wrap: wrap;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.curve-toggle {
+  flex: 0 0 auto;
+  padding: 8px 12px;
+  border: 1px solid var(--accent-electric-border);
+  border-radius: 10px;
+  background: var(--accent-electric-dim);
+  color: var(--accent-electric);
+  font: inherit;
+  font-size: 0.84rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.curve-toggle:hover {
+  background: rgba(56, 189, 248, 0.18);
 }
 
 .summary-pill {
@@ -490,6 +533,11 @@ h2 {
   .category-label {
     width: 72px;
     max-width: 72px;
+  }
+
+  .header-actions {
+    width: 100%;
+    justify-content: space-between;
   }
 
   .summary-pill {

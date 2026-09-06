@@ -2515,6 +2515,8 @@ watch(
         <CollectionManaCurve
           v-if="shouldShowManaCurve"
           :collection="collection"
+          collapsible
+          initially-collapsed
         />
 
         <!-- Export -------------------------------------------------------- -->
