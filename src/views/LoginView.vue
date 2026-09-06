@@ -49,9 +49,9 @@ function goHome() {
     <div class="login-card">
       <div class="login-copy">
         <span class="eyebrow">Account Access</span>
-        <h1>Log in to use Bulk Deck Builder</h1>
+        <h1>Log in to your account</h1>
         <p class="description">
-          Existing accounts can unlock the collection workspace and continue into the bulk commander analysis flow.
+          Save favorite cards, manage your collections, and use Bulk Deck Builder.
         </p>
       </div>
 

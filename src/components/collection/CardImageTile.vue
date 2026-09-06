@@ -92,6 +92,7 @@ function triggerPrimaryAction() {
       <CardPriceBadges
         :usd-price="props.item.gameplay_card?.lowest_price_usd"
         :draco-price="props.item.gameplay_card?.dracostore_price_cop"
+        :vault-price="props.item.gameplay_card?.vaultstore_price_cop"
       />
       <dl v-if="props.item.card_insights?.length" class="card-insights">
         <div v-for="insight in props.item.card_insights" :key="insight.label" class="card-insight">

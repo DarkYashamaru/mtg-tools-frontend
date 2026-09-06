@@ -31,6 +31,7 @@ type OverviewSection = {
   description: string
   entries: OverviewCardEntry[]
   entry_total?: number
+  profile_group?: 'categories' | 'types'
   returned_total?: number
 }
 
@@ -68,6 +69,8 @@ const isLoadingAllCards = ref(false)
 const allCardsError = ref('')
 const isLoading = ref(true)
 const isStartingBuilder = ref(false)
+const activeProfileGroup = ref<'categories' | 'types'>('categories')
+const selectedProfileTab = ref<Record<'categories' | 'types', string | null>>({ categories: null, types: null })
 const errorMessage = ref('')
 
 const activeCollectionId = computed(() => {
@@ -108,13 +111,7 @@ const overviewGroups = computed<CardOverviewGroup[]>(() => (
   }))
 ))
 
-const matchedCardTotal = computed(() => {
-  const uniqueCards = new Set<string>()
-  for (const group of overviewGroups.value) {
-    for (const entry of group.entries) uniqueCards.add(entry.card.oracle_id)
-  }
-  return uniqueCards.size
-})
+const availableSectionCount = computed(() => activeProfileTabs.value.length)
 
 function sectionDescription(section: OverviewSection): string {
   if (!section.entry_total || section.entry_total <= section.entries.length) {
@@ -141,6 +138,46 @@ const commanderSupportCardTotal = computed(() => (
   commanderSupportGroups.value.reduce((sum, group) => sum + group.entries.length, 0)
 ))
 
+type ProfileBrowserTab = {
+  id: string
+  title: string
+  description: string
+  count: number
+  items: CollectionItem[]
+  entryTotal?: number
+  commanderSynergy?: boolean
+}
+
+const profileTabs = computed<Record<'categories' | 'types', ProfileBrowserTab[]>>(() => {
+  const categories: ProfileBrowserTab[] = overviewGroups.value
+    .filter((group) => group.profile_group === 'categories')
+    .map((group) => ({ id: 'section:' + group.key, title: group.title, description: sectionDescription(group), count: group.entry_total ?? group.entries.length, items: group.items, entryTotal: group.entry_total }))
+  const types: ProfileBrowserTab[] = overviewGroups.value
+    .filter((group) => group.profile_group === 'types')
+    .map((group) => ({ id: 'section:' + group.key, title: group.title, description: sectionDescription(group), count: group.entry_total ?? group.entries.length, items: group.items, entryTotal: group.entry_total }))
+
+  for (const group of commanderSupportGroups.value) {
+    categories.push({ id: 'support:' + group.key, title: group.title, description: group.description, count: group.entries.length, items: group.items, commanderSynergy: true })
+  }
+
+  return { categories, types }
+})
+
+const activeProfileTabs = computed(() => profileTabs.value[activeProfileGroup.value])
+const activeProfileSection = computed(() => {
+  const tabs = activeProfileTabs.value
+  const selected = selectedProfileTab.value[activeProfileGroup.value]
+  return tabs.find((tab) => tab.id === selected) ?? tabs[0] ?? null
+})
+
+function selectProfileGroup(group: 'categories' | 'types') {
+  activeProfileGroup.value = group
+}
+
+function selectProfileTab(tabId: string) {
+  selectedProfileTab.value = { ...selectedProfileTab.value, [activeProfileGroup.value]: tabId }
+}
+
 async function loadSelectedThemePage() {
   if (!activeCollectionId.value || !activeCommanderId.value || activeThemeId.value === null) {
     errorMessage.value = 'Missing collection, commander, or theme identifier.'
@@ -158,7 +195,6 @@ async function loadSelectedThemePage() {
       router,
     })
     collectionCards.value = cards
-    store.setCollection(cards)
     store.selectCommander(activeCommanderId.value)
     activeCommander.value = cards.find((card) => card.oracle_id === activeCommanderId.value) ?? null
     if (!activeCommander.value) throw new Error('The selected commander is not present in this collection.')
@@ -386,7 +422,7 @@ onMounted(() => { loadSelectedThemePage() })
         <section class="overview-intro">
           <div>
             <p class="eyebrow">Deck Building Overview</p>
-            <h2>Category Snapshot Before Assembly</h2>
+            <h2>Explore Your Deck Sections</h2>
           </div>
           <p class="intro-copy">{{ poolDescription }}</p>
 
@@ -423,8 +459,8 @@ onMounted(() => { loadSelectedThemePage() })
               <strong>{{ activeOverview?.candidate_total ?? 0 }}</strong>
             </div>
             <div class="summary-chip">
-              <span class="summary-label">Tagged Matches</span>
-              <strong>{{ matchedCardTotal }}</strong>
+              <span class="summary-label">Available Sections</span>
+              <strong>{{ availableSectionCount }}</strong>
             </div>
             <div class="summary-chip">
               <span class="summary-label">Active Theme</span>
@@ -448,49 +484,52 @@ onMounted(() => { loadSelectedThemePage() })
           </div>
         </section>
 
-        <section v-if="commanderSupportGroups.length" class="support-spotlight">
-          <div class="support-spotlight-header">
+<section class="profile-browser">
+          <div class="profile-browser-header">
             <div>
-              <p class="eyebrow">Commander Support</p>
-              <h2>Commander-Specific Synergy Spotlight</h2>
+              <p class="eyebrow">Deck building sections</p>
+              <h2>Explore cards by role or type</h2>
             </div>
-            <p class="support-spotlight-copy">
-              These picks come from the commander-specific profile and are ranked for this commander before you enter the full builder.
-            </p>
+            <p>Choose a section to inspect its scored cards. Commander-specific synergy appears with Categories.</p>
+          </div>
+
+          <div class="profile-group-tabs" role="tablist" aria-label="Section group">
+            <button class="profile-group-tab" :class="{ active: activeProfileGroup === 'categories' }" type="button" role="tab" :aria-selected="activeProfileGroup === 'categories'" @click="selectProfileGroup('categories')">Categories</button>
+            <button class="profile-group-tab" :class="{ active: activeProfileGroup === 'types' }" type="button" role="tab" :aria-selected="activeProfileGroup === 'types'" @click="selectProfileGroup('types')">Types</button>
+          </div>
+
+          <div class="profile-section-tabs" role="tablist" aria-label="Section tabs">
+            <button
+              v-for="tab in activeProfileTabs"
+              :key="tab.id"
+              class="profile-section-tab"
+              :class="{ active: activeProfileSection?.id === tab.id, synergy: tab.commanderSynergy }"
+              type="button"
+              role="tab"
+              :aria-selected="activeProfileSection?.id === tab.id"
+             @click="selectProfileTab(tab.id)"
+            >
+              {{ tab.title }} <span>{{ tab.count }}</span>
+            </button>
           </div>
 
           <DeckSection
-            v-for="group in commanderSupportGroups"
-            :key="group.key"
-            :title="group.title"
-            :eyebrow="group.key"
-            :description="group.description"
-            :items="group.items"
+            v-if="activeProfileSection"
+            :key="selectedCardPool + '-' + activeProfileSection.id"
+            :title="activeProfileSection.title"
+            :eyebrow="activeProfileSection.commanderSynergy ? 'Commander synergy' : activeProfileGroup"
+            :description="activeProfileSection.description"
+            :items="activeProfileSection.items"
             view-mode="grid"
             organization-mode="zone"
             :show-quantity-actions="false"
             :hide-singleton-amount="true"
-            collapsible
-            @card-click="handleSectionCardClick"
+           @card-click="handleSectionCardClick"
           />
-        </section>
 
-        <section class="workspace-stack">
-          <DeckSection
-            v-for="group in overviewGroups"
-            :key="`${selectedCardPool}-${group.key}`"
-            :title="group.title"
-            :eyebrow="group.key"
-            :description="sectionDescription(group)"
-            :items="group.items"
-            view-mode="grid"
-            organization-mode="zone"
-            :show-quantity-actions="false"
-            :hide-singleton-amount="true"
-            collapsible
-            :initially-collapsed="true"
-            @card-click="handleSectionCardClick"
-          />
+          <div v-else class="profile-empty-state">
+            No {{ activeProfileGroup }} sections are available for this commander and card pool.
+          </div>
         </section>
       </div>
     </section>

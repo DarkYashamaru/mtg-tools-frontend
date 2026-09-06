@@ -3,8 +3,7 @@ import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import type { LocationQueryValue } from 'vue-router'
-import CardFaceViewer from '@/components/cards/CardFaceViewer.vue'
-import CardPriceBadges from '@/components/cards/CardPriceBadges.vue'
+import GameplayCardGrid from '@/components/cards/GameplayCardGrid.vue'
 import { useAuthStore } from '@/stores/authStore'
 import type { GameplayCard } from '@/types/gameplayCard'
 import { formatSearchResultsExport } from '@/utils/searchResultsExport'
@@ -19,20 +18,6 @@ const results = ref<GameplayCard[]>([])
 const exportMessage = ref('')
 const exportText = computed(() => formatSearchResultsExport(results.value))
 
-
-function ownershipCollections(card: GameplayCard) {
-  const namesById = new Map<number, string>()
-
-  for (const source of card.ownership_sources ?? []) {
-    if (source.collection_name) {
-      namesById.set(source.collection_id, source.collection_name)
-    }
-  }
-
-  return Array.from(namesById, ([id, name]) => ({ id, name })).sort((left, right) =>
-    left.name.localeCompare(right.name)
-  )
-}
 
 function appendValue(
   params: URLSearchParams,
@@ -204,96 +189,8 @@ watch(
       <p>No cards discovered matching this query parameter scheme. Try adjusting your parameters.</p>
     </div>
 
-    <div v-else class="card-grid">
-      <router-link
-        v-for="card in results"
-        :key="card.oracle_id"
-        :to="{ name: 'card-detail', params: { id: card.oracle_id } }"
-        class="card"
-      >
-        <div class="card-img-wrapper">
-          <CardFaceViewer
-            :card="card"
-            image-size="large"
-            :show-flip-control="true"
-            :interactive="true"
-          />
-        </div>
-
-        <div class="card-info">
-          <h3>{{ card.name }}</h3>
-          <div class="card-price-badges">
-            <span class="cmc-badge">CMC {{ card.cmc }}</span>
-            <CardPriceBadges
-              :usd-price="card.lowest_price_usd"
-              :draco-price="card.dracostore_price_cop"
-            />
-          </div>
-          <div v-if="card.owned_amount" class="ownership-pills">
-            <span class="metadata-pill ownership">Owned {{ card.owned_amount }}x</span>
-            <span
-              v-for="collection in ownershipCollections(card)"
-              :key="`collection-${card.oracle_id}-${collection.id}`"
-              class="metadata-pill ownership"
-            >
-              {{ collection.name }}
-            </span>
-          </div>
-          <div v-if="card.categories.length || card.archetypes.length" class="metadata-pills">
-            <span
-              v-for="category in card.categories"
-              :key="`category-${card.oracle_id}-${category.name}`"
-              class="metadata-pill category"
-            >
-              {{ category.name }}
-            </span>
-            <span
-              v-for="archetype in card.archetypes"
-              :key="`archetype-${card.oracle_id}-${archetype.name}`"
-              class="metadata-pill archetype"
-            >
-              {{ archetype.name }}
-            </span>
-          </div>
-        </div>
-      </router-link>
-    </div>
+    <GameplayCardGrid v-else :cards="results" />
   </div>
 </template>
 
 <style scoped src="./SearchResults.css"></style>
-<style scoped>
-.ownership-pills,
-.metadata-pills {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 10px;
-}
-
-.metadata-pill {
-  display: inline-flex;
-  align-items: center;
-  padding: 4px 8px;
-  border-radius: 999px;
-  border: 1px solid var(--surface-border-light);
-  color: var(--text-main);
-  font-size: 0.72rem;
-  font-weight: 700;
-  line-height: 1;
-}
-
-.metadata-pill.category {
-  background: rgba(56, 189, 248, 0.12);
-  border-color: var(--accent-electric-border);
-}
-
-.metadata-pill.archetype {
-  background: rgba(148, 163, 184, 0.12);
-}
-
-.metadata-pill.ownership {
-  background: rgba(16, 185, 129, 0.12);
-  border-color: rgba(16, 185, 129, 0.28);
-}
-</style>

@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import FavouriteButton from '@/components/cards/FavouriteButton.vue'
 import CardFaceViewer from '@/components/cards/CardFaceViewer.vue'
 import type { GameplayCard } from '@/types/gameplayCard'
+import { storeStatusLabel, formatDracoTime, type DracoPriceResponse } from '@/types/dracoPrice'
 
 function cleanCardNameForSearch(name: string): string {
   if (!name) return ''
@@ -24,6 +26,9 @@ const card = ref<GameplayCard | null>(null)
 const priceLoading = ref(true)
 const priceError = ref(false)
 const priceData = ref<PriceInfo | null>(null)
+const priceResult = ref<DracoPriceResponse | null>(null)
+const vaultLoading = ref(true)
+const vaultResult = ref<DracoPriceResponse | null>(null)
 
 const oracleId = computed(() => route.params.id as string)
 
@@ -43,6 +48,7 @@ async function loadCardDetails() {
     card.value = data as GameplayCard
     
     fetchLocalPrice(data.name)
+    fetchVaultPrice(data.name)
   }
   catch (err: any) {
     console.error('Fetch card details failed:', err)
@@ -57,6 +63,7 @@ async function fetchLocalPrice(cardName: string) {
   priceLoading.value = true
   priceError.value = false
   priceData.value = null
+  priceResult.value = null
   
   try {
     const params = new URLSearchParams({ name: cardName, oracle_id: oracleId.value })
@@ -66,9 +73,10 @@ async function fetchLocalPrice(cardName: string) {
       throw new Error(`Scraper responded with status code: ${response.status}`)
     }
     
-    const data = await response.json()
+    const data: DracoPriceResponse = await response.json()
+    priceResult.value = data
     
-    if (data.success) {
+    if (data.success && data.price != null) {
       priceData.value = {
         price: data.price,
         currency: data.currency || 'COP'
@@ -82,6 +90,16 @@ async function fetchLocalPrice(cardName: string) {
   } finally {
     priceLoading.value = false
   }
+}
+
+async function fetchVaultPrice(cardName: string) {
+  vaultLoading.value = true
+  try {
+    const response = await fetch(`/api/store-prices/vault/${oracleId.value}?${new URLSearchParams({ name: cardName })}`)
+    if (!response.ok) throw new Error('Vault price lookup failed')
+    vaultResult.value = await response.json() as DracoPriceResponse
+  } catch (err) { console.warn('Could not check The Vault price', err) }
+  finally { vaultLoading.value = false }
 }
 
 const dracoStoreUrl = computed(() => {
@@ -165,14 +183,14 @@ onMounted(() => {
             <div class="widget-header">
               <span class="widget-title">DracoStore Market</span>
               <span class="live-indicator" :class="{ 'loading-active': priceLoading }">
-                <span class="pulse-dot"></span> {{ priceLoading ? 'Scraping...' : 'Live Engine' }}
+                <span class="pulse-dot"></span> {{ priceLoading ? 'Checking…' : priceResult ? storeStatusLabel(priceResult.cache_status) : 'Price unavailable' }}
               </span>
             </div>
             
             <div class="widget-body">
               <div v-if="priceLoading" class="price-skeleton-block">
                 <div class="skeleton-line price-row-mock skeleton-pulse"></div>
-                <p class="placeholder-note">Crawling live local inventories...</p>
+                <p class="placeholder-note">Checking saved prices and refreshing only when eligible…</p>
               </div>
 
               <div v-else-if="priceError || !priceData" class="price-fallback-view">
@@ -198,8 +216,17 @@ onMounted(() => {
                 </div>
                 <div class="redirect-hint">View on Store →</div>
               </a>
+              <p v-if="priceResult?.last_updated" class="placeholder-note">Last updated: {{ formatDracoTime(priceResult.last_updated) }}</p>
+              <p v-if="priceResult?.next_refresh_at" class="placeholder-note">Next Draco lookup eligible: {{ formatDracoTime(priceResult.next_refresh_at) }}</p>
             </div>
           </div>
+
+          <div class="price-widget-card" :class="{ 'has-error': !vaultLoading && !vaultResult?.success }">
+            <div class="widget-header"><span class="widget-title">The Vault Market</span><span class="live-indicator" :class="{ 'loading-active': vaultLoading }"><span class="pulse-dot"></span> {{ vaultLoading ? 'Checking…' : vaultResult ? storeStatusLabel(vaultResult.cache_status) : 'Price unavailable' }}</span></div>
+            <div class="widget-body"><div v-if="vaultLoading" class="price-skeleton-block"><div class="skeleton-line price-row-mock skeleton-pulse"></div></div><div v-else-if="!vaultResult?.success" class="price-fallback-view"><span class="fallback-msg">Price not available</span></div><a v-else :href="vaultResult.product_url || '#'" target="_blank" rel="noopener noreferrer" class="price-active-view price-redirect-link"><div class="price-row"><span class="store-identity">The Vault</span><span class="scraped-price"><span class="currency-symbol">$</span>{{ vaultResult.price }}<span class="currency-badge">COP</span></span></div><div class="redirect-hint">View on Store →</div></a><p v-if="vaultResult?.last_updated" class="placeholder-note">Last updated: {{ formatDracoTime(vaultResult.last_updated) }}</p></div>
+          </div>
+
+          <FavouriteButton :oracle-id="card.oracle_id" :card-name="card.name" />
 
           <div class="legality-box">
             <h3>Format Legality</h3>

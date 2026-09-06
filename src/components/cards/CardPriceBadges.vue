@@ -1,34 +1,20 @@
 <script setup lang="ts">
+import { formatCopPrice, formatUsdPrice } from '@/utils/priceFormatters'
+
 interface Props {
   usdPrice?: number | null
   dracoPrice?: number | null
+  vaultPrice?: number | null
 }
 
 defineProps<Props>()
-
-const usdFormatter = new Intl.NumberFormat('en-US', {
-  style: 'currency',
-  currency: 'USD',
-})
-const copFormatter = new Intl.NumberFormat('es-CO', {
-  style: 'currency',
-  currency: 'COP',
-  maximumFractionDigits: 0,
-})
-
-function formatUsdPrice(price: number) {
-  return `${usdFormatter.format(price)} USD`
-}
-
-function formatCopPrice(price: number) {
-  return `${copFormatter.format(price)} COP`
-}
 </script>
 
 <template>
-  <div v-if="usdPrice != null || dracoPrice != null" class="price-badges">
+  <div v-if="usdPrice != null || dracoPrice != null || vaultPrice != null" class="price-badges">
     <span v-if="usdPrice != null" class="price-badge usd-price">{{ formatUsdPrice(usdPrice) }}</span>
     <span v-if="dracoPrice != null" class="price-badge draco-price">Draco {{ formatCopPrice(dracoPrice) }}</span>
+    <span v-if="vaultPrice != null" class="price-badge vault-price">The Vault {{ formatCopPrice(vaultPrice) }}</span>
   </div>
 </template>
 
@@ -62,5 +48,6 @@ function formatCopPrice(price: number) {
   background: rgba(245, 158, 11, 0.12);
   border-color: rgba(245, 158, 11, 0.35);
 }
+.vault-price { color: #d8b4fe; background: rgba(168, 85, 247, .12); border-color: rgba(168, 85, 247, .35); }
 </style>
 

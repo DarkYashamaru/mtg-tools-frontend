@@ -56,6 +56,7 @@ function handleLogout() {
         <router-link class="topbar-button" :to="authButtonTarget">
           {{ authButtonLabel }}
         </router-link>
+        <router-link v-if="isAuthenticated" class="topbar-button" :to="{ name: 'favourite-cards' }">Favorites</router-link>
         <button v-if="isAuthenticated" class="topbar-ghost-button" type="button" @click="handleLogout">
           Logout
         </button>

@@ -74,6 +74,7 @@ const router = createRouter({
       }),
       meta: { requiresAuth: true },
     },
+    { path: '/favourites', name: 'favourite-cards', component: () => import('@/views/FavouriteCards.vue'), meta: { requiresAuth: true } },
     { path: '/login', name: 'login', component: () => import('@/views/LoginView.vue') },
     
     // Named search routes

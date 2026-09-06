@@ -1,5 +1,6 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
+import { useCollectionStore } from '@/stores/collectionStore'
 
 type AuthUser = Record<string, unknown>
 
@@ -51,6 +52,7 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   function logout() {
+    useCollectionStore().clearStore()
     user.value = null
     accessToken.value = null
     sessionStorage.removeItem(AUTH_STORAGE_KEY)

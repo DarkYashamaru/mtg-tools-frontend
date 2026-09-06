@@ -42,13 +42,13 @@ type CommanderInsight = {
   rarityScore: number
 }
 
-function getColorIdentitySet(card: GameplayCard): Set<string> {
-  return new Set(card.color_identity.map((color) => color.symbol.toUpperCase()))
-}
+const COLOR_BITS: Record<string, number> = { W: 1, U: 2, B: 4, R: 8, G: 16 }
 
-function isColorIdentityLegal(commander: GameplayCard, candidate: GameplayCard): boolean {
-  const commanderColors = getColorIdentitySet(commander)
-  return candidate.color_identity.every((color) => commanderColors.has(color.symbol.toUpperCase()))
+function colorIdentityMask(card: GameplayCard): number {
+  return card.color_identity.reduce(
+    (mask, color) => mask | (COLOR_BITS[color.symbol.toUpperCase()] ?? 0),
+    0,
+  )
 }
 
 function normalizedRarity(value: string | null | undefined): string | null {
@@ -78,27 +78,26 @@ const commanderInsights = computed<CommanderInsight[]>(() => {
     return []
   }
 
+  const cardCountsByColorMask = Array.from({ length: 32 }, () => 0)
+  for (const card of collection.value) {
+    cardCountsByColorMask[colorIdentityMask(card)] += 1
+  }
+
   return validCommanders.value
     .map((commander) => {
+      const commanderMask = colorIdentityMask(commander)
       let cardsInColorIdentity = 0
 
-      for (const candidate of collection.value) {
-        if (candidate.oracle_id === commander.oracle_id) {
-          continue
+      for (let candidateMask = 0; candidateMask < cardCountsByColorMask.length; candidateMask += 1) {
+        if ((candidateMask & ~commanderMask) === 0) {
+          cardsInColorIdentity += cardCountsByColorMask[candidateMask]
         }
-
-        if (!isColorIdentityLegal(commander, candidate)) {
-          continue
-        }
-
-        cardsInColorIdentity += 1
       }
 
       const rarity = rarityByOracleId.value.get(commander.oracle_id) ?? null
-
       return {
         commander,
-        cardsInColorIdentity,
+        cardsInColorIdentity: cardsInColorIdentity - 1,
         rarity,
         rarityScore: rarity ? RARITY_SCORE[rarity] : 0,
       }
@@ -156,7 +155,6 @@ async function loadCollectionFromBackend(collectionId: string) {
   isLoading.value = true
   errorMessage.value = ''
   rarityByOracleId.value = new Map()
-  store.clearStore()
 
   try {
     const { collection: savedCollection, cards } = await loadSavedCollectionGameplay({
@@ -166,8 +164,9 @@ async function loadCollectionFromBackend(collectionId: string) {
       router,
     })
     rarityByOracleId.value = highestRarityByOracleId(savedCollection.items)
-    store.setCollection(cards)
-    await loadValidatedCommanderCandidates(cards)
+    if (store.validCommanderOracleIds.length === 0) {
+      await loadValidatedCommanderCandidates(cards)
+    }
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : 'Unable to load collection data.'
   } finally {

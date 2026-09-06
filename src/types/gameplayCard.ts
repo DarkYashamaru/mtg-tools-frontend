@@ -64,6 +64,14 @@ export interface GameplayCard {
   owned_collection_count?: number
   lowest_price_usd?: number | null
   dracostore_price_cop?: number | null
+  dracostore_last_updated?: string | null
+  dracostore_next_refresh_at?: string | null
+  dracostore_price_stale?: boolean
+  vaultstore_price_cop?: number | null
+  vaultstore_product_url?: string | null
+  vaultstore_last_updated?: string | null
+  vaultstore_next_refresh_at?: string | null
+  vaultstore_price_stale?: boolean
   ownership_sources?: Array<{
     collection_id: number
     collection_name: string

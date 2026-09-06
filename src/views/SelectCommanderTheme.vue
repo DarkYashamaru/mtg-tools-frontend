@@ -2,7 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
-import CommanderHero from '@/components/CommanderHero.vue'
+import CommanderSelectionSpotlight from '@/components/CommanderSelectionSpotlight.vue'
 import { useAuthStore } from '@/stores/authStore'
 import { useCollectionStore } from '@/stores/collectionStore'
 import type { CollectionRecord } from '@/components/collection/types'
@@ -106,7 +106,6 @@ async function loadCollectionScopedThemePage() {
 
     collectionRecord.value = collection
     collectionCards.value = cards
-    store.setCollection(cards)
     store.selectCommander(activeCommanderId.value)
 
     activeCommander.value = cards.find((card) => card.oracle_id === activeCommanderId.value) ?? null
@@ -173,7 +172,7 @@ onMounted(() => {
 
 <template>
   <div class="container">
-    <button class="back-link" @click="goBack">← Back to Overview</button>
+    <button class="back-link" @click="goBack">← Back to Possible Commanders</button>
 
     <div v-if="isLoading" class="empty-state">
       <h3>Loading Commander Themes</h3>
@@ -188,7 +187,7 @@ onMounted(() => {
     </div>
 
     <div v-else>
-      <CommanderHero :commander="activeCommander" show-tags />
+      <CommanderSelectionSpotlight :commander="activeCommander" />
 
       <hr class="divider" />
 

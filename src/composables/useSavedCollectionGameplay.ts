@@ -3,6 +3,7 @@ import type { Router } from 'vue-router'
 import type { Card } from '@/utils/deckScorer'
 import type { CollectionRecord } from '@/components/collection/types'
 import { useAuthStore } from '@/stores/authStore'
+import { useCollectionStore } from '@/stores/collectionStore'
 
 type AuthHeadersRef = ComputedRef<Record<string, string>>
 
@@ -37,6 +38,12 @@ export async function loadSavedCollectionGameplay({
   cards: Card[]
 }> {
   const authStore = useAuthStore()
+  const collectionStore = useCollectionStore()
+  const cached = collectionStore.getSavedCollection(collectionId)
+
+  if (cached) {
+    return cached
+  }
 
   const collectionResponse = await fetch(`/api/collections/${collectionId}`, {
     headers: {
@@ -106,8 +113,11 @@ export async function loadSavedCollectionGameplay({
     )
   }
 
-  return {
+  const result = {
     collection: selectedCollection,
     cards: dedupeGameplayCards(cardsPayload.cards as Card[]),
   }
+
+  collectionStore.setSavedCollection(result.collection, result.cards)
+  return result
 }

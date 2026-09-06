@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { Card } from '../utils/deckScorer'
+import type { CollectionRecord } from '@/components/collection/types'
 
 function dedupeGameplayCards(cards: Card[]): Card[] {
   const uniqueCards = new Map<string, Card>()
@@ -40,10 +41,35 @@ export const useCollectionStore = defineStore('collection', () => {
   const selectedCommanderId = ref<string | null>(initialCommanderId())
   const selectedTheme = ref<any | null>(null)
   const validCommanderOracleIds = ref<string[]>([])
+  const savedCollectionId = ref<string | null>(null)
+  const savedCollection = ref<CollectionRecord | null>(null)
 
   function setCollection(newCollection: Card[]) {
     collection.value = Array.isArray(newCollection) ? dedupeGameplayCards(newCollection) : []
     validCommanderOracleIds.value = []
+  }
+
+  function setSavedCollection(collectionRecord: CollectionRecord, cards: Card[]) {
+    const nextCollectionId = String(collectionRecord.id)
+    if (savedCollectionId.value !== nextCollectionId) {
+      validCommanderOracleIds.value = []
+      selectedCommanderId.value = null
+      selectedTheme.value = null
+    }
+
+    savedCollectionId.value = nextCollectionId
+    savedCollection.value = collectionRecord
+    collection.value = Array.isArray(cards) ? dedupeGameplayCards(cards) : []
+  }
+
+  function getSavedCollection(collectionId: string) {
+    if (savedCollectionId.value !== collectionId || !savedCollection.value) return null
+    return { collection: savedCollection.value, cards: collection.value }
+  }
+
+  function clearSavedCollection() {
+    savedCollectionId.value = null
+    savedCollection.value = null
   }
 
   function selectCommander(oracleId: string | null) {
@@ -64,8 +90,9 @@ export const useCollectionStore = defineStore('collection', () => {
     validCommanderOracleIds.value = Array.from(new Set(oracleIds))
   }
 
+  const validCommanderOracleIdSet = computed(() => new Set(validCommanderOracleIds.value))
   const validCommanders = computed(() => (
-    collection.value.filter((card) => validCommanderOracleIds.value.includes(card.oracle_id))
+    collection.value.filter((card) => validCommanderOracleIdSet.value.has(card.oracle_id))
   ))
 
   const selectedCommanderData = computed(() => {
@@ -115,6 +142,7 @@ export const useCollectionStore = defineStore('collection', () => {
     selectedCommanderId.value = null
     selectedTheme.value = null
     validCommanderOracleIds.value = []
+    clearSavedCollection()
     clearLegacyCollectionCache()
     try {
       sessionStorage.removeItem('mtg_selected_commander_id')
@@ -128,10 +156,15 @@ export const useCollectionStore = defineStore('collection', () => {
     selectedCommanderId,
     selectedTheme,
     validCommanderOracleIds,
+    savedCollectionId,
+    savedCollection,
     validCommanders,
     selectedCommanderData,
     selectedCommanderThemes,
     setCollection,
+    setSavedCollection,
+    getSavedCollection,
+    clearSavedCollection,
     selectCommander,
     setSelectedTheme,
     setValidCommanderOracleIds,

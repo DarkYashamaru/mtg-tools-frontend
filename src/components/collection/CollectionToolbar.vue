@@ -34,6 +34,9 @@ interface Props {
   addCardDisabled?: boolean
   showBasicLandAdjust?: boolean
   basicLandAdjustDisabled?: boolean
+  showStorePriceRefresh?: boolean
+  storePriceRefreshDisabled?: boolean
+  storePriceRefreshLabel?: string
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -41,6 +44,9 @@ const props = withDefaults(defineProps<Props>(), {
   showScoreSort: false,
   showBasicLandAdjust: false,
   basicLandAdjustDisabled: false,
+  showStorePriceRefresh: false,
+  storePriceRefreshDisabled: false,
+  storePriceRefreshLabel: 'Refresh store prices',
   commanderWorkspaceMode: 'normal',
 })
 const emit = defineEmits<{
@@ -58,6 +64,7 @@ const emit = defineEmits<{
   selectAddCardSuggestion: [value: CollectionCardSearchResult]
   dismissAddCardSuggestions: []
   adjustBasicLands: []
+  refreshStorePrices: []
 }>()
 
 const lowerDeckType = computed(() => props.collection.deck_type.toLowerCase())
@@ -349,6 +356,20 @@ watch(
             @click="emit('adjustBasicLands')"
           >
             Adjust basics
+          </button>
+        </div>
+      </div>
+
+      <div v-if="showStorePriceRefresh" class="control-block">
+        <span class="control-label">Stores</span>
+        <div class="segmented">
+          <button
+            type="button"
+            class="segment store-price-refresh"
+            :disabled="storePriceRefreshDisabled"
+            @click="emit('refreshStorePrices')"
+          >
+            {{ storePriceRefreshLabel }}
           </button>
         </div>
       </div>

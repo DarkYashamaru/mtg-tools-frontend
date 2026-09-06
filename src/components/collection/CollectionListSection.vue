@@ -129,6 +129,7 @@ function isMutating(item: CollectionItem) {
             <CardPriceBadges
               :usd-price="item.gameplay_card?.lowest_price_usd"
               :draco-price="item.gameplay_card?.dracostore_price_cop"
+              :vault-price="item.gameplay_card?.vaultstore_price_cop"
             />
             <div class="row-actions">
               <button
