@@ -14,7 +14,7 @@ import type { Card, CardThemeResponse } from '@/utils/deckScorer'
 import { getBestCardImage } from '@/components/cards/cardDisplay'
 
 type CardPool = 'collection' | 'all'
-type CardTileSource = Pick<CollectionItem, 'card_id' | 'image_uri' | 'zone'>
+type CardTileSource = Pick<CollectionItem, 'card_id' | 'image_uri' | 'printing_faces' | 'zone'>
 
 type OverviewCardEntry = {
   card: Card
@@ -301,6 +301,7 @@ function createCardTileItem({
     collector_number: null,
     lang: null,
     image_uri: sourceItem?.image_uri ?? getBestCardImage(card, 0, 'normal'),
+    printing_faces: sourceItem?.printing_faces,
     amount: 1,
     zone: sourceItem?.zone ?? 'mainboard',
     categories: card.categories ?? [],
@@ -363,7 +364,7 @@ async function startConstructingDeck() {
         deck_text: `Commander\n1 ${activeCommander.value.name}`,
         builder_source_collection_id: activeCollectionId.value,
         builder_theme_id: activeThemeId.value,
-        include_in_master: false,
+        include_in_master: true,
       }),
     })
     const data = await response.json().catch(() => ({}))

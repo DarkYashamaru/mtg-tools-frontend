@@ -22,6 +22,9 @@ export type CollectionItem = {
     value: string | number
   }>
   gameplay_card?: GameplayCard
+  lowest_price_usd?: number | null
+  dracostore_price_cop?: number | null
+  vaultstore_price_cop?: number | null
   cmc?: number
   card_types?: string[]
   color_identity?: Array<{ symbol: string }>
@@ -34,10 +37,27 @@ export type CollectionItem = {
   collector_number: string | null
   lang: string | null
   image_uri: string | null
+  printing_faces?: Array<{ name: string; image_uri: string }>
   amount: number
   zone: string
   available_print_count?: number
   source_collection_count?: number
+  owned_amount?: number
+  reserved_amount?: number
+  available_amount?: number
+  reservations?: Array<{
+    collection_id: number
+    collection_name: string
+    item_id: number
+    card_id: string
+    set_code: string | null
+    collector_number: string | null
+    lang: string | null
+    image_uri: string | null
+    printing_faces?: Array<{ name: string; image_uri: string }>
+    amount: number
+    zone: string
+  }>
   sources?: Array<{
     collection_id: number
     collection_name: string
@@ -47,6 +67,7 @@ export type CollectionItem = {
     collector_number: string | null
     lang: string | null
     image_uri: string | null
+    printing_faces?: Array<{ name: string; image_uri: string }>
     amount: number
     zone: string
   }>

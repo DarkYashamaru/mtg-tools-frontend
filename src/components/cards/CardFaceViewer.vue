@@ -20,6 +20,7 @@ interface Props {
   lazy?: boolean
   fallbackName?: string | null
   previewImageUrl?: string | null
+  printingFaces?: Array<{ name: string; image_uri: string }> | null
   compactFallback?: boolean
 }
 
@@ -31,6 +32,7 @@ const props = withDefaults(defineProps<Props>(), {
   lazy: true,
   fallbackName: null,
   previewImageUrl: null,
+  printingFaces: null,
   compactFallback: false,
 })
 
@@ -44,6 +46,14 @@ const resolvedFallbackName = computed(() => props.fallbackName || getCardFallbac
 const resolvedAltText = computed(() => activeFace.value?.name || resolvedFallbackName.value || 'Card image')
 
 const imageUrl = computed(() => {
+  const activeFaceName = activeFace.value?.name?.trim().toLocaleLowerCase()
+  const printingFace = activeFaceName
+    ? props.printingFaces?.find((face) => face.name.trim().toLocaleLowerCase() === activeFaceName)
+    : undefined
+  if (printingFace?.image_uri) {
+    return printingFace.image_uri
+  }
+
   if (props.previewImageUrl) {
     return props.previewImageUrl
   }
@@ -93,7 +103,7 @@ watch(
   }
 )
 
-watch(imageUrl, () => {
+watch([imageUrl, () => props.printingFaces], () => {
   resetImageState()
 })
 </script>

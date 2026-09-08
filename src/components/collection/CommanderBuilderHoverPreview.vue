@@ -19,7 +19,8 @@ const directReasons = computed(() => props.item?.commander_support_reasons ?? []
       <CardFaceViewer
         v-if="showsCard"
         :card="item.gameplay_card"
-        :preview-image-url="item.gameplay_card ? null : item.image_uri"
+        :preview-image-url="item.image_uri"
+        :printing-faces="item.printing_faces"
         :fallback-name="item.name"
         image-size="normal"
         :show-flip-control="true"

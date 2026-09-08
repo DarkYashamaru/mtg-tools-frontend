@@ -1,12 +1,10 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
-import CommanderBuilderHoverPreview from './CommanderBuilderHoverPreview.vue'
-import CommanderBuilderSourceList from './CommanderBuilderSourceList.vue'
+import CardImageTile from './CardImageTile.vue'
 import type { CollectionItem } from './types'
 import { useAuthStore } from '@/stores/authStore'
-import type { GameplayCard } from '@/types/gameplayCard'
 
 type SourcePool = 'collection' | 'all'
 type SourceMode = 'categories' | 'types'
@@ -17,7 +15,10 @@ type SourceEntry = {
   score: number
   reasons: NonNullable<CollectionItem['commander_support_reasons']>
   score_breakdown?: NonNullable<CollectionItem['score_breakdown']>
-  source_item: Pick<CollectionItem, 'card_id' | 'image_uri' | 'amount' | 'zone'>
+  lowest_price_usd?: number | null
+  dracostore_price_cop?: number | null
+  vaultstore_price_cop?: number | null
+  source_item: Pick<CollectionItem, 'card_id' | 'image_uri' | 'printing_faces' | 'amount' | 'zone' | 'owned_amount' | 'reserved_amount' | 'available_amount' | 'reservations'>
 }
 
 type SourceTab = {
@@ -73,7 +74,6 @@ const { authHeaders } = storeToRefs(authStore)
 const route = useRoute()
 const router = useRouter()
 
-const dialog = ref<HTMLElement | null>(null)
 const effectiveSourceId = ref(props.sourceCollectionId)
 const sourceSummary = ref<SourceSummary | null>(null)
 const sourceNotice = ref('')
@@ -88,8 +88,7 @@ const activeTabKey = ref('ramp')
 const isInitializing = ref(false)
 const isLoadingAll = ref(false)
 const errorMessage = ref('')
-const selectedPreviewItem = ref<CollectionItem | null>(null)
-const gameplayCache = new Map<string, GameplayCard>()
+const poolScrollArea = ref<HTMLElement | null>(null)
 
 const tabs = computed(() => tabsByMode.value[sourceMode.value][selectedPool.value])
 const activeTab = computed(() => tabs.value.find((tab) => tab.key === activeTabKey.value) ?? tabs.value[0])
@@ -128,7 +127,9 @@ function toCollectionItem(sectionKey: string, entry: SourceEntry, index: number)
     commander_support_score: entry.score,
     commander_support_reasons: entry.reasons ?? [],
     score_breakdown: entry.score_breakdown,
-    gameplay_card: gameplayCache.get(entry.oracle_id),
+    lowest_price_usd: entry.lowest_price_usd,
+    dracostore_price_cop: entry.dracostore_price_cop,
+    vaultstore_price_cop: entry.vaultstore_price_cop,
     cmc: 0,
     card_types: [],
     color_identity: [],
@@ -139,8 +140,13 @@ function toCollectionItem(sectionKey: string, entry: SourceEntry, index: number)
     collector_number: null,
     lang: null,
     image_uri: entry.source_item.image_uri,
+    printing_faces: entry.source_item.printing_faces,
     amount: entry.source_item.amount,
     zone: entry.source_item.zone,
+    owned_amount: entry.source_item.owned_amount,
+    reserved_amount: entry.source_item.reserved_amount,
+    available_amount: entry.source_item.available_amount,
+    reservations: entry.source_item.reservations,
   }
 }
 
@@ -242,7 +248,6 @@ async function loadThemeName() {
 async function initialize() {
   if (!props.open || !props.commanderOracleId || isInitializing.value) return
   isInitializing.value = true
-  clearPreviewItem()
   errorMessage.value = ''
   sourceNotice.value = ''
   selectedPool.value = 'collection'
@@ -265,7 +270,6 @@ async function initialize() {
     }
     activeTabKey.value = firstTabKey('collection', 'categories')
     if (activeTabKey.value) await loadPage('collection', activeTabKey.value)
-    await nextTick(() => dialog.value?.focus())
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : 'Unable to open the source collection.'
   } finally {
@@ -275,7 +279,6 @@ async function initialize() {
 
 async function selectPool(pool: SourcePool) {
   if (selectedPool.value === pool) return
-  clearPreviewItem()
   isLoadingAll.value = pool === 'all'
   errorMessage.value = ''
   try {
@@ -292,7 +295,6 @@ async function selectPool(pool: SourcePool) {
 
 async function selectMode(mode: SourceMode) {
   if (sourceMode.value === mode) return
-  clearPreviewItem()
   errorMessage.value = ''
   try {
     if (tabsFor(selectedPool.value, mode).length === 0) await loadMetadata(selectedPool.value, mode)
@@ -305,62 +307,38 @@ async function selectMode(mode: SourceMode) {
 }
 
 async function selectTab(key: string) {
-  clearPreviewItem()
   activeTabKey.value = key
+  poolScrollArea.value?.scrollTo({ top: 0 })
   await loadPage(selectedPool.value, key)
 }
 
-function clearPreviewItem() {
-  selectedPreviewItem.value = null
+const existingDeckOracleIds = computed(() => new Set(props.deckOracleIds))
+
+function isAlreadyInDeck(item: CollectionItem) {
+  return Boolean(item.oracle_id && existingDeckOracleIds.value.has(item.oracle_id))
 }
 
-async function selectPreviewItem(item: CollectionItem | null) {
-  // Keep the latest row selected when the pointer or focus leaves the list.
-  if (!item) return
-  selectedPreviewItem.value = item
-  if (!item.oracle_id || item.gameplay_card) return
-  const cached = gameplayCache.get(item.oracle_id)
-  if (cached) {
-    item.gameplay_card = cached
-    return
-  }
-  try {
-    const response = await fetch(`/api/cards/id/${item.oracle_id}`)
-    if (!response.ok) return
-    const card = await response.json() as GameplayCard
-    gameplayCache.set(card.oracle_id, card)
-    item.gameplay_card = card
-  } catch {
-    // The scored row remains usable when optional preview hydration fails.
-  }
+function isUnavailableInMaster(item: CollectionItem) {
+  if (selectedPool.value !== 'collection') return false
+  return (item.available_amount ?? item.amount) <= 0
 }
 
-async function openSelectedCard(item: CollectionItem) {
-  await selectPreviewItem(item)
-  emit('openCard', item)
+function primaryActionLabel(item: CollectionItem) {
+  if (isAlreadyInDeck(item)) return 'In Deck'
+  if (isUnavailableInMaster(item)) return 'Unavailable'
+  return 'Add to Deck'
 }
 
-function handleKeydown(event: KeyboardEvent) {
-  if (!props.open) return
-  if (event.key === 'Escape') emit('close')
-  if (event.key !== 'Tab' || !dialog.value) return
-  const focusable = Array.from(dialog.value.querySelectorAll<HTMLElement>('button:not(:disabled), [href], input:not(:disabled), [tabindex]:not([tabindex="-1"])'))
-  if (focusable.length === 0) return
-  const first = focusable[0]
-  const last = focusable[focusable.length - 1]
-  if (event.shiftKey && document.activeElement === first) {
-    event.preventDefault()
-    last.focus()
-  } else if (!event.shiftKey && document.activeElement === last) {
-    event.preventDefault()
-    first.focus()
-  }
+function handleSourceScroll(event: Event) {
+  const element = event.currentTarget as HTMLElement
+  const tab = activeTab.value
+  if (!tab || tab.isLoading || !tab.hasMore) return
+  if (element.scrollHeight - element.scrollTop - element.clientHeight > 640) return
+  void loadPage(selectedPool.value, tab.key)
 }
 
 watch(() => props.open, (open) => {
-  document.body.style.overflow = open ? 'hidden' : ''
   if (open) void initialize()
-  else clearPreviewItem()
 }, { immediate: true })
 watch(() => [props.sourceCollectionId, props.commanderOracleId, props.themeId], () => {
   tabsByMode.value = {
@@ -371,510 +349,191 @@ watch(() => [props.sourceCollectionId, props.commanderOracleId, props.themeId], 
   sourceMode.value = 'categories'
   sourceSummary.value = null
   themeName.value = ''
-  clearPreviewItem()
   if (props.open) void initialize()
-})
-
-onMounted(() => window.addEventListener('keydown', handleKeydown))
-onBeforeUnmount(() => {
-  window.removeEventListener('keydown', handleKeydown)
-  document.body.style.overflow = ''
 })
 </script>
 
 <template>
-  <Teleport to="body">
-    <div v-if="open" class="modal-backdrop" role="presentation" @mousedown.self="emit('close')">
-      <section ref="dialog" class="source-modal" role="dialog" aria-modal="true" aria-labelledby="source-modal-title" tabindex="-1">
-        <header class="modal-header">
-          <div>
-            <p class="eyebrow">Commander Card Pool</p>
-            <h2 id="source-modal-title">{{ sourceSummary?.name || 'Source Collection' }}</h2>
-            <p>{{ themeLabel }} · {{ sourceSummary?.item_count ?? 0 }} source cards</p>
-          </div>
-          <button class="close-button" type="button" aria-label="Close card pool" @click="emit('close')">×</button>
+  <section v-if="open" class="source-browser-panel" aria-labelledby="source-browser-title">
+    <header class="source-browser-header">
+      <div>
+        <p class="eyebrow">Commander Card Pool</p>
+        <h2 id="source-browser-title">{{ sourceSummary?.name || 'Source Collection' }}</h2>
+        <p>{{ themeLabel }} · {{ sourceSummary?.item_count ?? 0 }} source cards</p>
+      </div>
+      <button class="close-button" type="button" aria-label="Hide card pool" @click="emit('close')">×</button>
+    </header>
+
+    <p v-if="sourceNotice" class="notice">{{ sourceNotice }}</p>
+    <p v-if="actionMessage" class="action-message" aria-live="polite">{{ actionMessage }}</p>
+
+    <div class="modal-controls">
+      <div class="segmented" role="group" aria-label="Card pool">
+        <button :class="{ active: selectedPool === 'collection' }" type="button" @click="selectPool('collection')">
+          {{ sourceSummary?.is_virtual ? 'Master Collection' : 'Source Collection' }}
+        </button>
+        <button :class="{ active: selectedPool === 'all' }" type="button" :disabled="isLoadingAll" @click="selectPool('all')">
+          {{ isLoadingAll ? 'Loading…' : 'All Cards / Upgrades' }}
+        </button>
+      </div>
+      <div class="segmented" role="group" aria-label="Source view">
+        <button :class="{ active: sourceMode === 'categories' }" type="button" @click="selectMode('categories')">Categories</button>
+        <button :class="{ active: sourceMode === 'types' }" type="button" @click="selectMode('types')">Types</button>
+      </div>
+    </div>
+
+    <div v-if="tabs.length" class="tab-row">
+      <button v-for="tab in tabs" :key="tab.key" type="button" :class="{ active: activeTab?.key === tab.key }" @click="selectTab(tab.key)">
+        {{ tab.title }} <span>{{ tab.entryTotal }}</span>
+      </button>
+    </div>
+
+    <p v-if="displayedError" class="error-message">{{ displayedError }}</p>
+    <div v-if="isInitializing" class="loading-state">Loading scored source cards…</div>
+
+    <div
+      v-else-if="activeTab"
+      ref="poolScrollArea"
+      class="source-grid-scroll"
+      @scroll.passive="handleSourceScroll"
+    >
+      <section class="source-grid-shell">
+        <header class="source-grid-header">
+          <p>{{ sourceMode === 'categories' ? 'Category' : 'Card Type' }}</p>
+          <h3>{{ activeTab.title }}</h3>
+          <span>{{ activeTab.items.length }} of {{ activeTab.entryTotal }} cards</span>
+          <p v-if="activeTab.description">{{ activeTab.description }}</p>
         </header>
 
-        <p v-if="sourceNotice" class="notice">{{ sourceNotice }}</p>
-        <p v-if="actionMessage" class="action-message" aria-live="polite">{{ actionMessage }}</p>
-        <div class="modal-controls">
-          <div class="segmented" role="group" aria-label="Card pool">
-            <button :class="{ active: selectedPool === 'collection' }" type="button" @click="selectPool('collection')">{{ sourceSummary?.is_virtual ? 'Master Collection' : 'Source Collection' }}</button>
-            <button :class="{ active: selectedPool === 'all' }" type="button" :disabled="isLoadingAll" @click="selectPool('all')">
-              {{ isLoadingAll ? 'Loading…' : 'All Cards / Upgrades' }}
-            </button>
-          </div>
-          <div class="segmented" role="group" aria-label="Source view">
-            <button :class="{ active: sourceMode === 'categories' }" type="button" @click="selectMode('categories')">Categories</button>
-            <button :class="{ active: sourceMode === 'types' }" type="button" @click="selectMode('types')">Types</button>
-          </div>
+        <p v-if="activeTab.items.length === 0 && !activeTab.isLoading && !activeTab.loadError" class="empty-grid">
+          No cards in this section.
+        </p>
+
+        <div v-else class="source-card-grid">
+          <CardImageTile
+            v-for="item in activeTab.items"
+            :key="item.id"
+            :item="item"
+            :hide-singleton-amount="true"
+            :show-quantity-actions="false"
+            :primary-action-label="primaryActionLabel(item)"
+            :primary-action-disabled="addingCard || isAlreadyInDeck(item) || isUnavailableInMaster(item)"
+            @card-click="emit('openCard', item)"
+            @primary-action="emit('addCard', item)"
+          />
         </div>
 
-        <div v-if="tabs.length" class="tab-row">
-          <button v-for="tab in tabs" :key="tab.key" type="button" :class="{ active: activeTab?.key === tab.key }" @click="selectTab(tab.key)">
-            {{ tab.title }} <span>{{ tab.entryTotal }}</span>
-          </button>
-        </div>
-
-        <p v-if="displayedError" class="error-message">{{ displayedError }}</p>
-        <div v-if="isInitializing" class="loading-state">Loading scored source cards…</div>
-        <div v-else-if="activeTab" class="modal-content">
-          <div class="source-list-area">
-            <CommanderBuilderSourceList
-              :title="activeTab.title"
-              :eyebrow="sourceMode === 'categories' ? 'Category' : 'Card Type'"
-              :description="activeTab.description"
-              :items="activeTab.items"
-              :total-items="activeTab.entryTotal"
-              :has-more="activeTab.hasMore"
-              :is-loading="activeTab.isLoading"
-              :load-error="activeTab.loadError"
-              :existing-oracle-ids="deckOracleIds"
-              :primary-action-disabled="addingCard"
-              @hover-item="selectPreviewItem"
-              @card-click="openSelectedCard"
-              @primary-action="emit('addCard', $event)"
-              @load-more="loadPage(selectedPool, activeTab.key)"
-            />
-          </div>
-
-          <aside class="preview-area">
-            <CommanderBuilderHoverPreview :item="selectedPreviewItem" variant="card" />
-          </aside>
-
-          <aside class="score-area" aria-live="polite">
-            <CommanderBuilderHoverPreview :item="selectedPreviewItem" variant="score" />
-          </aside>
-        </div>
+        <p v-if="activeTab.isLoading" class="load-status">Loading more cards…</p>
+        <button v-else-if="activeTab.loadError" class="retry-button" type="button" @click="loadPage(selectedPool, activeTab.key)">
+          Retry loading cards
+        </button>
+        <p v-else-if="!activeTab.hasMore && activeTab.items.length" class="load-status">All cards in this section are loaded.</p>
       </section>
     </div>
-  </Teleport>
+  </section>
 </template>
 
 <style scoped>
-.modal-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 1500;
-
-  display: grid;
-  place-items: center;
-
-  padding: 16px;
-
-  background: rgba(2, 6, 23, 0.78);
-  backdrop-filter: blur(8px);
-}
-
-/*
- * Use essentially the entire viewport while still leaving enough
- * room around the modal to visually distinguish it from a full page.
- */
-.source-modal {
-  position: relative;
+.source-browser-panel {
   display: flex;
   flex-direction: column;
-
-  width: calc(100vw - 32px);
-  height: calc(100dvh - 32px);
-
-  /*
-   * Prevent the modal from becoming absurdly wide on ultra-wide
-   * monitors, while still being substantially larger than before.
-   */
-  max-width: 1800px;
-
+  width: 100%;
+  height: 100%;
   min-width: 0;
   min-height: 0;
-
   overflow: hidden;
-
   border: 1px solid var(--surface-border-light);
-  border-radius: 22px;
-
+  border-radius: 20px;
   background: var(--surface-card);
-  box-shadow: var(--shadow-lg);
-
-  outline: none;
+  box-shadow: var(--shadow-md);
 }
 
-
-/* ------------------------------------------------------------------
- * Header
- * ------------------------------------------------------------------ */
-
-.modal-header {
-  display: flex;
-  flex: 0 0 auto;
-
-  align-items: flex-start;
-  justify-content: space-between;
-
-  gap: 20px;
-
-  min-width: 0;
-
-  padding: 20px 24px 14px;
-}
-
-.modal-header > div {
-  min-width: 0;
-}
-
-.modal-header h2 {
-  margin: 0;
-
-  color: var(--text-light);
-
-  /*
-   * Prevent a very long collection name from pushing the close
-   * button outside the modal.
-   */
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.modal-header p {
-  margin: 5px 0 0;
-
-  color: var(--text-muted);
-}
-
-.eyebrow {
-  margin: 0 0 6px !important;
-
-  color: var(--accent-electric) !important;
-
-  font-size: 0.74rem;
-  font-weight: 800;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-}
-
-.close-button {
-  flex: 0 0 42px;
-
-  width: 42px;
-  height: 42px;
-
-  border: 1px solid var(--surface-border-light);
-  border-radius: 50%;
-
-  background: var(--surface-hover);
-  color: var(--text-light);
-
-  font-size: 1.7rem;
-  line-height: 1;
-
-  cursor: pointer;
-}
-
-.close-button:hover {
-  border-color: var(--accent-electric-border);
-  background: var(--accent-electric-dim);
-  color: var(--accent-electric);
-}
-
-
-/* ------------------------------------------------------------------
- * Messages
- * ------------------------------------------------------------------ */
-
+.source-browser-header,
+.modal-controls,
+.tab-row,
 .notice,
 .action-message,
 .error-message {
   flex: 0 0 auto;
-
-  margin: 0 24px 12px;
-  padding: 10px 12px;
-
-  border-radius: 10px;
-
-  color: var(--text-main);
-  background: var(--accent-electric-dim);
 }
 
-.action-message {
-  border: 1px solid var(--accent-electric-border);
-}
-
-.error-message {
-  border: 1px solid var(--error-border);
-
-  background: rgba(127, 29, 29, 0.18);
-  color: var(--error-text);
-}
-
-
-/* ------------------------------------------------------------------
- * Controls
- * ------------------------------------------------------------------ */
-
-.modal-controls {
+.source-browser-header {
   display: flex;
-  flex: 0 0 auto;
-
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
-
-  gap: 12px;
-
-  min-width: 0;
-
-  padding: 0 24px 14px;
+  gap: 14px;
+  padding: 16px 18px 12px;
 }
 
-.segmented {
-  display: flex;
-  flex-wrap: wrap;
-
-  gap: 8px;
-
-  min-width: 0;
+.source-browser-header h2,
+.source-browser-header p,
+.source-grid-header h3,
+.source-grid-header p {
+  margin: 0;
 }
 
-.segmented button,
-.tab-row button {
-  padding: 9px 12px;
+.source-browser-header h2,
+.source-grid-header h3 {
+  color: var(--text-light);
+}
 
+.source-browser-header > div { min-width: 0; }
+.source-browser-header h2 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 1.2rem; }
+.source-browser-header p { margin-top: 5px; color: var(--text-muted); }
+.eyebrow { margin: 0 0 6px !important; color: var(--accent-electric) !important; font-size: 0.74rem; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; }
+
+.close-button {
+  flex: 0 0 36px;
+  width: 36px;
+  height: 36px;
   border: 1px solid var(--surface-border-light);
-  border-radius: 10px;
-
+  border-radius: 50%;
   background: var(--surface-hover);
-  color: var(--text-main);
-
-  font: inherit;
-  font-weight: 700;
-
+  color: var(--text-light);
+  font-size: 1.4rem;
   cursor: pointer;
 }
 
+.close-button:hover,
 .segmented button:hover:not(:disabled),
-.tab-row button:hover {
-  border-color: var(--accent-electric-border);
-}
+.tab-row button:hover { border-color: var(--accent-electric-border); color: var(--accent-electric); }
 
+.notice,
+.action-message,
+.error-message { margin: 0 18px 10px; padding: 9px 10px; border-radius: 10px; color: var(--text-main); background: var(--accent-electric-dim); }
+.action-message { border: 1px solid var(--accent-electric-border); }
+.error-message { border: 1px solid var(--error-border); background: rgba(127, 29, 29, 0.18); color: var(--error-text); }
+
+.modal-controls { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 0 18px 12px; }
+.segmented { display: flex; flex-wrap: wrap; gap: 7px; }
+.segmented button,
+.tab-row button { padding: 8px 10px; border: 1px solid var(--surface-border-light); border-radius: 9px; background: var(--surface-hover); color: var(--text-main); font: inherit; font-size: 0.84rem; font-weight: 700; cursor: pointer; }
 .segmented button.active,
-.tab-row button.active {
-  border-color: var(--accent-electric-border);
+.tab-row button.active { border-color: var(--accent-electric-border); background: var(--accent-electric-dim); color: var(--accent-electric); }
+.segmented button:disabled { opacity: 0.55; cursor: wait; }
 
-  background: var(--accent-electric-dim);
-  color: var(--accent-electric);
-}
+.tab-row { display: flex; gap: 7px; min-width: 0; padding: 0 18px 12px; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: thin; }
+.tab-row button { flex: 0 0 auto; white-space: nowrap; }
+.tab-row span { margin-left: 4px; color: var(--text-muted); }
 
-.segmented button:disabled {
-  opacity: 0.55;
-  cursor: wait;
-}
+.loading-state { padding: 28px 18px; color: var(--text-muted); }
+.source-grid-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+.source-grid-shell { display: grid; gap: 14px; padding: 0 18px 18px; }
+.source-grid-header { display: grid; gap: 3px; }
+.source-grid-header > p:first-child { color: var(--accent-electric); font-size: 0.72rem; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; }
+.source-grid-header > span,
+.source-grid-header > p:last-child { color: var(--text-muted); font-size: 0.84rem; }
+.source-card-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.empty-grid { padding: 18px; border: 1px dashed var(--surface-border-light); border-radius: 14px; color: var(--text-muted); }
+.load-status { margin: 0; padding: 4px 0; color: var(--text-muted); text-align: center; }
+.retry-button { justify-self: center; padding: 9px 12px; border: 1px solid var(--accent-electric-border); border-radius: 10px; background: var(--accent-electric-dim); color: var(--accent-electric); font: inherit; font-weight: 800; cursor: pointer; }
 
-
-/* ------------------------------------------------------------------
- * Tabs
- * ------------------------------------------------------------------ */
-
-.tab-row {
-  display: flex;
-  flex: 0 0 auto;
-  flex-wrap: nowrap;
-
-  gap: 8px;
-
-  min-width: 0;
-
-  padding: 0 24px 14px;
-
-  overflow-x: auto;
-  overflow-y: hidden;
-
-  /*
-   * Don't let horizontal tab scrolling accidentally scroll
-   * the rest of the page/modal.
-   */
-  overscroll-behavior-x: contain;
-
-  scrollbar-width: thin;
-}
-
-.tab-row button {
-  flex: 0 0 auto;
-
-  white-space: nowrap;
-}
-
-.tab-row span {
-  margin-left: 6px;
-
-  color: var(--text-muted);
-}
-
-
-/* ------------------------------------------------------------------
- * Loading
- * ------------------------------------------------------------------ */
-
-.loading-state {
-  flex: 1;
-
-  padding: 36px 24px;
-
-  color: var(--text-muted);
-}
-
-
-/* ------------------------------------------------------------------
- * Main content
- * ------------------------------------------------------------------ */
-
-.modal-content {
-  flex: 1 1 auto;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) clamp(250px, 19vw, 340px) clamp(270px, 20vw, 360px);
-  align-items: start;
-  gap: 16px;
-  min-width: 0;
-  min-height: 0;
-  overflow-x: hidden;
-  overflow-y: auto;
-  padding: 0 24px 24px;
-  overscroll-behavior: contain;
-}
-
-.source-list-area,
-.preview-area,
-.score-area {
-  min-width: 0;
-  width: 100%;
-}
-
-.preview-area,
-.score-area {
-  position: sticky;
-  top: 0;
-  align-self: start;
-}
-
-.modal-content :deep(.source-list-shell),
-.preview-area :deep(.commander-builder-preview-panel),
-.score-area :deep(.commander-builder-preview-panel) {
-  box-sizing: border-box;
-  width: 100%;
-  min-width: 0;
-  max-width: 100%;
-}
-
-.preview-area :deep(.commander-builder-preview-panel),
-.score-area :deep(.commander-builder-preview-panel) {
-  position: relative;
-  inset: auto;
-}
-
-@media (max-width: 1320px) {
-  .modal-content {
-    grid-template-columns: minmax(0, 1fr) minmax(250px, 330px);
-  }
-
-  .preview-area,
-  .score-area {
-    position: static;
-  }
-
-  .preview-area {
-    grid-column: 1;
-  }
-
-  .score-area {
-    grid-column: 2;
-    grid-row: 1 / span 2;
-  }
-}
-@media (max-width: 700px) {
-  .modal-backdrop {
-    padding: 0;
-  }
-
-  .source-modal {
-    width: 100vw;
-    height: 100dvh;
-
-    max-width: none;
-
-    border: 0;
-    border-radius: 0;
-  }
-
-  .modal-header {
-    padding: 16px 16px 12px;
-  }
-
-  .modal-header h2 {
-    font-size: 1.25rem;
-  }
-
-  .modal-header p:not(.eyebrow) {
-    font-size: 0.86rem;
-  }
-
-  .close-button {
-    flex-basis: 38px;
-
-    width: 38px;
-    height: 38px;
-  }
-
-  .notice,
-  .action-message,
-  .error-message {
-    margin-right: 16px;
-    margin-left: 16px;
-  }
-
-  .modal-controls {
-    align-items: stretch;
-    flex-direction: column;
-
-    padding-right: 16px;
-    padding-left: 16px;
-  }
-
-  .segmented {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-
-    width: 100%;
-  }
-
-  .segmented button {
-    min-width: 0;
-  }
-
-  .tab-row {
-    padding-right: 16px;
-    padding-left: 16px;
-  }
-
-  .modal-content {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 16px;
-
-    padding-right: 16px;
-    padding-bottom: 16px;
-    padding-left: 16px;
-  }
-
-  .preview-area,
-  .score-area {
-    grid-column: auto;
-    grid-row: auto;
-  }
-}
-
-
-/* Very narrow devices */
-
-@media (max-width: 480px) {
-  .segmented {
-    grid-template-columns: 1fr;
-  }
+@media (max-width: 620px) {
+  .modal-controls { align-items: stretch; flex-direction: column; }
+  .source-card-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .source-browser-header,
+  .modal-controls,
+  .tab-row { padding-right: 14px; padding-left: 14px; }
+  .source-grid-shell { padding-right: 14px; padding-left: 14px; }
 }
 </style>

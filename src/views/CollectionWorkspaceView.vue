@@ -154,7 +154,7 @@ const isMutatingCommander = ref(false)
 const isValidatingDeck = ref(false)
 const deckLegalityResult = ref<DeckLegalityResult | null>(null)
 
-const isSourceModalOpen = ref(false)
+const isSourceBrowserOpen = ref(false)
 const isAddingSourceCard = ref(false)
 
 const sourceActionError = ref('')
@@ -195,6 +195,7 @@ const profileSectionsByMode = ref<
   category: [],
   type: [],
 })
+let profileSectionsGeneration = 0
 
 const profileSections = computed(() => {
   if (organizationMode.value === 'category') {
@@ -835,10 +836,28 @@ function syncSavedCollectionSnapshot() {
   collectionStore.setSavedCollection(collection.value, cards)
 }
 
+function invalidateProfileSections() {
+  profileSectionsGeneration += 1
+  profileSectionsByMode.value = {
+    category: [],
+    type: [],
+  }
+}
+
 async function refreshCollectionSupplementaryData() {
   syncSavedCollectionSnapshot()
-  profileSectionsByMode.value = { category: [], type: [] }
-  await loadCommanderScores()
+  invalidateProfileSections()
+
+  const activeOrganizationMode = organizationMode.value
+  const profileSectionsRefresh =
+    activeOrganizationMode === 'zone'
+      ? Promise.resolve()
+      : loadProfileSections(activeOrganizationMode)
+
+  await Promise.all([
+    loadCommanderScores(),
+    profileSectionsRefresh,
+  ])
 }
 
 async function loadCollection() {
@@ -848,10 +867,7 @@ async function loadCollection() {
   errorMessage.value = ''
 
   commanderScoresByOracleId.value = {}
-  profileSectionsByMode.value = {
-    category: [],
-    type: [],
-  }
+  invalidateProfileSections()
 
   try {
     const collectionEndpoint =
@@ -1173,7 +1189,9 @@ async function loadCommanderScores() {
 /* Profile sections                                                           */
 /* -------------------------------------------------------------------------- */
 
-async function loadProfileSections() {
+async function loadProfileSections(
+  mode: ProfileSectionMode,
+) {
   if (!collection.value) {
     profileSectionsByMode.value = {
       category: [],
@@ -1181,6 +1199,8 @@ async function loadProfileSections() {
     }
     return
   }
+
+  const generation = profileSectionsGeneration
 
   const endpoint =
     isMasterCollectionRoute.value
@@ -1218,11 +1238,14 @@ async function loadProfileSections() {
     }
   }
 
-  const profileGroup = organizationMode.value === 'category' ? 'categories' : 'types'
+  const profileGroup = mode === 'category' ? 'categories' : 'types'
   const sections = await loadGroup(profileGroup)
+
+  if (generation !== profileSectionsGeneration) return
+
   profileSectionsByMode.value = {
     ...profileSectionsByMode.value,
-    [organizationMode.value]: sections,
+    [mode]: sections,
   }
 }
 
@@ -2119,7 +2142,7 @@ async function mutateCommander(
         collection.value,
       )
 
-    isSourceModalOpen.value = false
+    isSourceBrowserOpen.value = false
     deckLegalityResult.value = null
 
     await refreshCollectionSupplementaryData()
@@ -2240,11 +2263,11 @@ function reopenCommanderBuilder() {
   sourceActionError.value = ''
   sourceActionMessage.value = ''
 
-  isSourceModalOpen.value = true
+  isSourceBrowserOpen.value = !isSourceBrowserOpen.value
 }
 
 function closeSourceBrowser() {
-  isSourceModalOpen.value = false
+  isSourceBrowserOpen.value = false
 
   sourceActionError.value = ''
   sourceActionMessage.value = ''
@@ -2348,7 +2371,7 @@ watch(
   (mode) => {
     if (mode === 'zone' || !collection.value) return
     const current = profileSectionsByMode.value[mode]
-    if (current.length === 0) void loadProfileSections()
+    if (current.length === 0) void loadProfileSections(mode)
   },
 )
 
@@ -2503,6 +2526,7 @@ watch(
           :show-deck-metrics="true"
           :show-commander-builder-action="showCommanderBuilderAction"
           :show-commander-builder-resume-action="showCommanderBuilderResumeAction"
+          :commander-builder-open="isSourceBrowserOpen"
           :show-master-search-action="showMasterSearchAction"
           @create-commander-deck="goToCommanderBuilder"
           @open-commander-builder="reopenCommanderBuilder"
@@ -2712,10 +2736,46 @@ watch(
             @dismiss-add-card-suggestions="dismissAddCardSuggestions"
           />
 
+          <div
+            v-if="isSourceBrowserOpen && collection.commander_oracle_id"
+            class="commander-source-split"
+          >
+            <main class="commander-source-deck-pane">
+              <CommanderWorkspace
+                :collection="filteredCollection"
+                :view-mode="viewMode"
+                :organization-mode="organizationMode"
+                :profile-sections="profileSections"
+                :mutating-item-ids="mutatingItemIds"
+                :show-quantity-actions="!isReadOnlyCollection"
+                :show-score="true"
+                @context-menu="handleContextMenu"
+                @increment-item="mutateItemQuantity($event, 'increment')"
+                @decrement-item="mutateItemQuantity($event, 'decrement')"
+              />
+            </main>
+
+            <aside class="commander-source-browser-pane">
+              <CommanderSourceBrowserModal
+                :open="isSourceBrowserOpen"
+                :source-collection-id="builderSourceCollectionId"
+                :commander-oracle-id="collection.commander_oracle_id"
+                :theme-id="builderThemeId"
+                :deck-oracle-ids="existingCommanderDeckOracleIds"
+                :adding-card="isAddingSourceCard"
+                :action-error="sourceActionError"
+                :action-message="sourceActionMessage"
+                @close="closeSourceBrowser"
+                @add-card="addSourceCard"
+                @open-card="openItemCardDetails"
+              />
+            </aside>
+          </div>
+
           <!-- Empty result ----------------------------------------------- -->
 
           <div
-            v-if="
+            v-else-if="
               filteredCollection.items.length === 0 &&
               !isCommanderTemplateMode
             "
@@ -2967,20 +3027,6 @@ watch(
           @select="replacePrint"
         />
 
-        <CommanderSourceBrowserModal
-          v-if="collection.commander_oracle_id"
-          :open="isSourceModalOpen"
-          :source-collection-id="builderSourceCollectionId"
-          :commander-oracle-id="collection.commander_oracle_id"
-          :theme-id="builderThemeId"
-          :deck-oracle-ids="existingCommanderDeckOracleIds"
-          :adding-card="isAddingSourceCard"
-          :action-error="sourceActionError"
-          :action-message="sourceActionMessage"
-          @close="closeSourceBrowser"
-          @add-card="addSourceCard"
-          @open-card="openItemCardDetails"
-        />
       </template>
     </section>
   </div>

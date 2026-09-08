@@ -14,7 +14,8 @@ defineProps<Props>()
     <div v-if="item?.gameplay_card || item?.image_uri" class="preview-card">
       <CardFaceViewer
         :card="item.gameplay_card"
-        :preview-image-url="item.gameplay_card ? null : item.image_uri"
+        :preview-image-url="item.image_uri"
+        :printing-faces="item.printing_faces"
         :fallback-name="item.name"
         image-size="normal"
         :show-flip-control="true"

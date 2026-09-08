@@ -10,12 +10,14 @@ interface Props {
   showDeckMetrics?: boolean
   showCommanderBuilderAction?: boolean
   showCommanderBuilderResumeAction?: boolean
+  commanderBuilderOpen?: boolean
   showMasterSearchAction?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
   showCommanderBuilderAction: false,
   showCommanderBuilderResumeAction: false,
+  commanderBuilderOpen: false,
   showMasterSearchAction: false,
   deckValueUsd: 0,
   legalityResult: null,
@@ -135,8 +137,8 @@ const formattedDeckValue = computed(() => new Intl.NumberFormat('en-US', {
         <button v-if="showCommanderBuilderAction" class="primary-action" type="button" @click="$emit('createCommanderDeck')">
           Create commander deck from collection
         </button>
-        <button v-if="showCommanderBuilderResumeAction" class="primary-action" type="button" @click="$emit('openCommanderBuilder')">
-          Browse Card Pool
+        <button v-if="showCommanderBuilderResumeAction" class="primary-action" type="button" :aria-pressed="commanderBuilderOpen" @click="$emit('openCommanderBuilder')">
+          {{ commanderBuilderOpen ? 'Close Card Pool' : 'Browse Card Pool' }}
         </button>
         <button v-if="showMasterSearchAction" class="secondary-action" type="button" @click="$emit('searchMasterCollection')">
           Advanced search this pool

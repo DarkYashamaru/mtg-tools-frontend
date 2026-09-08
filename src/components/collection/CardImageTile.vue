@@ -73,7 +73,8 @@ function triggerPrimaryAction() {
     <div class="card-media">
       <CardFaceViewer
         :card="props.item.gameplay_card"
-        :preview-image-url="props.item.gameplay_card ? null : props.item.image_uri"
+        :preview-image-url="props.item.image_uri"
+        :printing-faces="props.item.printing_faces"
         :fallback-name="props.item.name"
         image-size="normal"
         :show-flip-control="true"
@@ -90,10 +91,18 @@ function triggerPrimaryAction() {
         <span v-if="shouldShowQuantity()" class="quantity-inline" :class="{ violation: hasSingletonViolation() }">{{ props.item.amount }}x</span>
       </p>
       <CardPriceBadges
-        :usd-price="props.item.gameplay_card?.lowest_price_usd"
-        :draco-price="props.item.gameplay_card?.dracostore_price_cop"
-        :vault-price="props.item.gameplay_card?.vaultstore_price_cop"
+        :usd-price="props.item.lowest_price_usd ?? props.item.gameplay_card?.lowest_price_usd"
+        :draco-price="props.item.dracostore_price_cop ?? props.item.gameplay_card?.dracostore_price_cop"
+        :vault-price="props.item.vaultstore_price_cop ?? props.item.gameplay_card?.vaultstore_price_cop"
       />
+      <dl v-if="props.item.available_amount !== undefined" class="inventory-summary">
+        <div><dt>Owned</dt><dd>{{ props.item.owned_amount ?? 0 }}</dd></div>
+        <div><dt>Reserved</dt><dd>{{ props.item.reserved_amount ?? 0 }}</dd></div>
+        <div><dt>Available</dt><dd :class="{ unavailable: props.item.available_amount <= 0 }">{{ props.item.available_amount }}</dd></div>
+      </dl>
+      <p v-if="props.item.available_amount !== undefined && props.item.available_amount <= 0 && props.item.reservations?.length" class="reservation-note">
+        Reserved in {{ props.item.reservations.map((reservation) => reservation.collection_name).join(', ') }}
+      </p>
       <dl v-if="props.item.card_insights?.length" class="card-insights">
         <div v-for="insight in props.item.card_insights" :key="insight.label" class="card-insight">
           <dt>{{ insight.label }}</dt>
@@ -208,6 +217,42 @@ function triggerPrimaryAction() {
   margin: 4px 0 0;
   color: var(--text-muted);
   font-size: 0.84rem;
+}
+
+.inventory-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  margin: 10px 0 0;
+}
+
+.inventory-summary div {
+  padding: 7px 6px;
+  border: 1px solid var(--surface-border-light);
+  border-radius: 9px;
+  text-align: center;
+  background: rgba(8, 12, 20, 0.58);
+}
+
+.inventory-summary dt {
+  color: var(--text-muted);
+  font-size: 0.66rem;
+}
+
+.inventory-summary dd {
+  margin: 2px 0 0;
+  color: var(--accent-electric);
+  font-size: 0.88rem;
+  font-weight: 800;
+}
+
+.inventory-summary dd.unavailable,
+.reservation-note {
+  color: var(--error-text, #fb7185);
+}
+
+.reservation-note {
+  font-size: 0.76rem !important;
 }
 
 .card-insights {

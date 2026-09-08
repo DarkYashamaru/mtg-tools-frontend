@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import DeckInput from '@/components/DeckInput.vue'
@@ -15,8 +15,17 @@ const collectionName = ref('')
 const deckText = ref('')
 const deckType = ref<'Binder' | 'Standard' | 'Commander'>('Binder')
 const includeInMaster = ref(true)
+const hasChosenMasterInclusion = ref(false)
 const isSubmitting = ref(false)
 const errorMessage = ref('')
+
+watch(deckType, (type) => {
+  if (!hasChosenMasterInclusion.value) includeInMaster.value = type !== 'Commander'
+})
+
+function chooseMasterInclusion() {
+  hasChosenMasterInclusion.value = true
+}
 
 async function submitCollection() {
   errorMessage.value = ''
@@ -127,11 +136,11 @@ function goBack() {
         </fieldset>
 
         <label class="master-inclusion-option">
-          <input v-model="includeInMaster" type="checkbox">
+          <input v-model="includeInMaster" type="checkbox" @change="chooseMasterInclusion">
           <span>
             <strong>Include in Master Collection</strong>
             <small>
-              Turn this off for planned decks or wish lists containing cards you do not own yet.
+              New Commander decks start excluded because they may be planned purchases. Turn this on once this deck should reserve owned cards.
             </small>
           </span>
         </label>

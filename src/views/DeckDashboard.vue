@@ -337,15 +337,21 @@ onMounted(() => {
                 type="checkbox"
                 :checked="collection.include_in_master"
                 :disabled="isMasterInclusionUpdating(collection.id)"
-                :aria-label="`Include ${collection.name} in Master Collection`"
+                :aria-label="isCommanderCollection(collection)
+                  ? `Reserve ${collection.name} in Master Collection`
+                  : `Include ${collection.name} in Master Collection`"
                 @change="updateMasterInclusion(collection, $event)"
               >
               <span>
                 {{ isMasterInclusionUpdating(collection.id)
                   ? 'Updating Master Collection...'
-                  : collection.include_in_master
-                    ? 'Included in Master Collection'
-                    : 'Excluded from Master Collection' }}
+                  : isCommanderCollection(collection)
+                    ? (collection.include_in_master
+                      ? 'Reserving cards in Master Collection'
+                      : 'Not reserving cards in Master Collection')
+                    : (collection.include_in_master
+                      ? 'Included in Master Collection'
+                      : 'Excluded from Master Collection') }}
               </span>
             </label>
 
