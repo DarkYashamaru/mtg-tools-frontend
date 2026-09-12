@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import CardFaceViewer from '@/components/cards/CardFaceViewer.vue'
+import CollectionLiveSynergies from './CollectionLiveSynergies.vue'
 import type { CollectionItem } from './types'
 
 type PreviewVariant = 'full' | 'card' | 'score'
@@ -47,6 +48,7 @@ const directReasons = computed(() => props.item?.commander_support_reasons ?? []
           <p v-if="!scoreBreakdown.length && directReasons.length" class="reason-copy">
             {{ directReasons.map((reason) => `${reason.label} (${reason.points > 0 ? '+' : ''}${reason.points})`).join(' · ') }}
           </p>
+          <CollectionLiveSynergies :groups="item.live_synergies ?? []" />
         </template>
       </div>
     </div>

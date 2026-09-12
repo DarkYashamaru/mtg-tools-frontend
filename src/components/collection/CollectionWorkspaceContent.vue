@@ -22,6 +22,7 @@ const props = defineProps<{
   organizationMode: WorkspaceOrganizationMode
   profileSections: CollectionProfileSection[]
   commanderItems: CollectionItem[]
+  commanderTemplate: import('./types').CommanderDeckTemplateData | null
   templateMode: boolean
   sourceBrowserOpen: boolean
   hoveredItem: CollectionItem | null
@@ -42,7 +43,7 @@ const component = computed(() => {
   return BinderWorkspace
 })
 const componentProps = computed(() => props.templateMode
-  ? { commanderItems: props.commanderItems }
+  ? { commanderItems: props.commanderItems, commanderTemplate: props.commanderTemplate }
   : { organizationMode: props.organizationMode, profileSections: props.profileSections,
       ...(isCommander.value ? { showScore: true } : {}) })
 const events = {

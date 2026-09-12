@@ -14,6 +14,7 @@ import {
   type CollectionFacetFilters,
 } from '@/components/collection/filtering'
 import { sortCollectionItems } from '@/components/collection/sorting'
+import type { CardColorMatchMode } from '@/components/collection/CardColorFilter.vue'
 
 interface Options {
   organizationMode: Ref<WorkspaceOrganizationMode>
@@ -24,6 +25,8 @@ interface Options {
 export function useCollectionPresentation({ collection, scoredCollection, organizationMode }: Options) {
   const filterText = ref('')
   const colorFilters = ref<string[]>([])
+  const cardColors = ref<string[]>([])
+  const cardColorMode = ref<CardColorMatchMode>('exact')
   const supertypeFilters = ref<string[]>([])
   const cardTypeFilters = ref<string[]>([])
   const subtypeFilters = ref<string[]>([])
@@ -36,6 +39,8 @@ export function useCollectionPresentation({ collection, scoredCollection, organi
   const collectionFacetFilters = computed<CollectionFacetFilters>(
     () => ({
       colors: colorFilters.value,
+      cardColors: cardColors.value,
+      cardColorMode: cardColorMode.value,
       supertypes: supertypeFilters.value,
       cardTypes: cardTypeFilters.value,
       subtypes: subtypeFilters.value,
@@ -113,6 +118,8 @@ export function useCollectionPresentation({ collection, scoredCollection, organi
   return {
     filterText,
     colorFilters,
+    cardColors,
+    cardColorMode,
     supertypeFilters,
     cardTypeFilters,
     subtypeFilters,

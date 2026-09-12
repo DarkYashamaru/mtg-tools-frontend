@@ -6,11 +6,16 @@ import {
   ref,
 } from 'vue'
 import { COLOR_FILTER_OPTIONS } from './filtering'
+import CardColorFilter, { type CardColorMatchMode } from './CardColorFilter.vue'
 
 interface Props {
   modelValue: string
+  label?: string
+  placeholder?: string
 
   colorFilters?: string[]
+  cardColors?: string[]
+  cardColorMode?: CardColorMatchMode
   supertypeFilters?: string[]
   cardTypeFilters?: string[]
   subtypeFilters?: string[]
@@ -23,6 +28,8 @@ interface Props {
 const props = withDefaults(
   defineProps<Props>(),
   {
+    label: 'Filter cards',
+    placeholder: 'Search current collection...',
     supertypeOptions: () => [],
     cardTypeOptions: () => [],
     subtypeOptions: () => [],
@@ -32,6 +39,8 @@ const props = withDefaults(
 const emit = defineEmits<{
   'update:modelValue': [value: string]
   'update:colorFilters': [value: string[]]
+  'update:cardColors': [value: string[]]
+  'update:cardColorMode': [value: CardColorMatchMode]
   'update:supertypeFilters': [value: string[]]
   'update:cardTypeFilters': [value: string[]]
   'update:subtypeFilters': [value: string[]]
@@ -53,6 +62,8 @@ const showFacetFilters = computed(() => (
 ))
 
 const activeFacetCount = computed(() => (
+  (props.cardColors?.length ?? 0)
+  +
   (props.colorFilters?.length ?? 0)
   + (props.supertypeFilters?.length ?? 0)
   + (props.cardTypeFilters?.length ?? 0)
@@ -131,6 +142,8 @@ function handleKeydown(event: KeyboardEvent) {
 
 function clearFacetFilters() {
   emit('update:colorFilters', [])
+  emit('update:cardColors', [])
+  emit('update:cardColorMode', 'exact')
   emit('update:supertypeFilters', [])
   emit('update:cardTypeFilters', [])
   emit('update:subtypeFilters', [])
@@ -165,14 +178,14 @@ onBeforeUnmount(() => {
   <div class="filters">
     <label class="filter-field">
       <span class="control-label">
-        Filter cards
+        {{ label }}
       </span>
 
       <div class="filter-input-shell">
         <input
           :value="modelValue"
           type="text"
-          placeholder="Search current collection..."
+          :placeholder="placeholder"
           @input="
             emit(
               'update:modelValue',
@@ -196,6 +209,13 @@ onBeforeUnmount(() => {
       class="facet-row"
     >
       <div class="facet-filters">
+        <CardColorFilter
+          v-if="cardColors !== undefined && cardColorMode !== undefined"
+          :model-value="cardColors"
+          :mode="cardColorMode"
+          @update:model-value="emit('update:cardColors', $event)"
+          @update:mode="emit('update:cardColorMode', $event)"
+        />
         <div class="facet-dropdown">
           <button
             type="button"

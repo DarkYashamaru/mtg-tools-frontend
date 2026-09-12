@@ -23,6 +23,8 @@ interface Props {
   showScoreSort?: boolean
   filterText: string
   colorFilters?: string[]
+  cardColors?: string[]
+  cardColorMode?: 'exact' | 'including' | 'at-most'
   supertypeFilters?: string[]
   cardTypeFilters?: string[]
   subtypeFilters?: string[]
@@ -59,6 +61,8 @@ const emit = defineEmits<{
   'update:sortDirection': [value: CollectionSortDirection]
   'update:filterText': [value: string]
   'update:colorFilters': [value: string[]]
+  'update:cardColors': [value: string[]]
+  'update:cardColorMode': [value: 'exact' | 'including' | 'at-most']
   'update:supertypeFilters': [value: string[]]
   'update:cardTypeFilters': [value: string[]]
   'update:subtypeFilters': [value: string[]]
@@ -101,6 +105,8 @@ const isReadOnly = computed(() =>
       <CollectionToolbarFilters
         :model-value="filterText"
         :color-filters="colorFilters"
+        :card-colors="cardColors"
+        :card-color-mode="cardColorMode"
         :supertype-filters="supertypeFilters"
         :card-type-filters="cardTypeFilters"
         :subtype-filters="subtypeFilters"
@@ -110,6 +116,8 @@ const isReadOnly = computed(() =>
         @update:model-value="
           emit('update:filterText', $event)
         "
+        @update:card-colors="emit('update:cardColors', $event)"
+        @update:card-color-mode="emit('update:cardColorMode', $event)"
         @update:color-filters="
           emit('update:colorFilters', $event)
         "

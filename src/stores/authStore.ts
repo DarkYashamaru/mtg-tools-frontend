@@ -13,8 +13,9 @@ const AUTH_STORAGE_KEY = 'mtg_auth_user'
 const AUTH_TOKEN_STORAGE_KEY = 'mtg_auth_token'
 
 export const useAuthStore = defineStore('auth', () => {
-  const user = ref<AuthUser | null>(getStoredUser())
-  const accessToken = ref<string | null>(getStoredToken())
+  const storedAuth = getStoredAuth()
+  const user = ref<AuthUser | null>(storedAuth.user)
+  const accessToken = ref<string | null>(storedAuth.accessToken)
   const isLoading = ref(false)
 
   const isAuthenticated = computed(() => user.value !== null && typeof accessToken.value === 'string' && accessToken.value.length > 0)
@@ -44,8 +45,7 @@ export const useAuthStore = defineStore('auth', () => {
 
       user.value = data.user
       accessToken.value = data.access_token
-      sessionStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(data.user))
-      sessionStorage.setItem(AUTH_TOKEN_STORAGE_KEY, data.access_token)
+      persistAuth(data.user, data.access_token)
     } finally {
       isLoading.value = false
     }
@@ -55,8 +55,7 @@ export const useAuthStore = defineStore('auth', () => {
     useCollectionStore().clearStore()
     user.value = null
     accessToken.value = null
-    sessionStorage.removeItem(AUTH_STORAGE_KEY)
-    sessionStorage.removeItem(AUTH_TOKEN_STORAGE_KEY)
+    clearStoredAuth()
   }
 
   return {
@@ -70,26 +69,58 @@ export const useAuthStore = defineStore('auth', () => {
   }
 })
 
-function getStoredUser(): AuthUser | null {
+type StoredAuth = {
+  user: AuthUser | null
+  accessToken: string | null
+}
+
+function getStoredAuth(): StoredAuth {
+  const persistentAuth = readAuth(localStorage)
+  if (persistentAuth.user && persistentAuth.accessToken) {
+    return persistentAuth
+  }
+
+  const legacyAuth = readAuth(sessionStorage)
+  if (!legacyAuth.user || !legacyAuth.accessToken) {
+    return { user: null, accessToken: null }
+  }
+
+  // Preserve existing logins when upgrading from session-only persistence.
+  persistAuth(legacyAuth.user, legacyAuth.accessToken)
+  removeAuth(sessionStorage)
+  return legacyAuth
+}
+
+function readAuth(storage: Storage): StoredAuth {
   try {
-    const storedUser = sessionStorage.getItem(AUTH_STORAGE_KEY)
+    const storedUser = storage.getItem(AUTH_STORAGE_KEY)
+    const storedToken = storage.getItem(AUTH_TOKEN_STORAGE_KEY)
+    const user = storedUser ? JSON.parse(storedUser) : null
 
-    if (!storedUser) {
-      return null
+    return {
+      user: user && typeof user === 'object' ? user : null,
+      accessToken: typeof storedToken === 'string' && storedToken.length > 0 ? storedToken : null,
     }
-
-    const parsedUser = JSON.parse(storedUser)
-    return parsedUser && typeof parsedUser === 'object' ? parsedUser : null
   } catch {
-    return null
+    return { user: null, accessToken: null }
   }
 }
 
-function getStoredToken(): string | null {
+function persistAuth(user: AuthUser, accessToken: string) {
   try {
-    const storedToken = sessionStorage.getItem(AUTH_TOKEN_STORAGE_KEY)
-    return typeof storedToken === 'string' && storedToken.length > 0 ? storedToken : null
-  } catch {
-    return null
-  }
+    localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(user))
+    localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, accessToken)
+  } catch {}
+}
+
+function clearStoredAuth() {
+  removeAuth(localStorage)
+  removeAuth(sessionStorage)
+}
+
+function removeAuth(storage: Storage) {
+  try {
+    storage.removeItem(AUTH_STORAGE_KEY)
+    storage.removeItem(AUTH_TOKEN_STORAGE_KEY)
+  } catch {}
 }

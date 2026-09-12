@@ -2,6 +2,7 @@
 import type { CollectionCardContextMenuPayload, CollectionItem } from './types'
 import CardPriceBadges from '@/components/cards/CardPriceBadges.vue'
 import CardFaceViewer from '@/components/cards/CardFaceViewer.vue'
+import CollectionLiveSynergies from './CollectionLiveSynergies.vue'
 
 interface Props {
   item: CollectionItem
@@ -110,7 +111,7 @@ function triggerPrimaryAction() {
         </div>
       </dl>
       <div
-        v-if="props.item.commander_support_score !== undefined || (props.item.commander_support_reasons?.length ?? 0) > 0 || (props.item.score_breakdown?.length ?? 0) > 0"
+        v-if="props.item.commander_support_score !== undefined || (props.item.commander_support_reasons?.length ?? 0) > 0 || (props.item.score_breakdown?.length ?? 0) > 0 || (props.item.live_synergies?.length ?? 0) > 0"
         class="commander-support-box"
       >
         <div v-if="props.item.commander_support_score !== undefined" class="commander-support-score">
@@ -127,6 +128,7 @@ function triggerPrimaryAction() {
         <p v-else-if="props.item.commander_support_reasons?.length" class="commander-support-reasons">
           {{ props.item.commander_support_reasons.map((reason) => `${reason.label} (${reason.points > 0 ? '+' : ''}${reason.points})`).join(' · ') }}
         </p>
+        <CollectionLiveSynergies :groups="props.item.live_synergies ?? []" />
       </div>
       <div v-if="props.showQuantityActions" class="quantity-actions">
         <button

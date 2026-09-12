@@ -17,6 +17,7 @@ export type CollectionItem = {
     score: number
     reasons: Array<{ code: string; label: string; points: number }>
   }>
+  live_synergies?: CollectionLiveSynergy[]
   card_insights?: Array<{
     label: string
     value: string | number
@@ -73,6 +74,14 @@ export type CollectionItem = {
   }>
   categories?: Array<{ name: string }>
   archetypes?: Array<{ name: string }>
+}
+
+export type CollectionLiveSynergy = {
+  rule_key: string
+  title: string
+  direction: 'enables' | 'enabled_by'
+  partner_oracle_ids: string[]
+  partner_names: string[]
 }
 
 export type CollectionCommanderCard = {
@@ -171,3 +180,8 @@ export type CollectionCardSearchResult = {
   lang: string | null
   image_uri: string | null
 }
+
+export type CommanderTemplateRow = { key: string; label: string; minimum: number; maximum: number; actual: number; planned: boolean; status: 'below' | 'within' | 'above' | 'planning' }
+export type CommanderTemplateSection = { key: string; label: string; target: number; actual: number; status: 'below' | 'above' | 'on-target' }
+export type CommanderLandSection = { key: string; title: string; item_ids: Array<string | number>; copy_count: number }
+export type CommanderDeckTemplateData = { commander: { oracle_ids: string[]; color_identity: string[]; color_count: number; combined_mana_value: number }; sections: CommanderTemplateSection[]; land_base: { tier: string; rows: CommanderTemplateRow[] }; land_sections: CommanderLandSection[] }

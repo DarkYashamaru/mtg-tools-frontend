@@ -335,6 +335,7 @@ async function handleBasicLandAdjusted(
         `Basic lands adjusted to ${adjustment.reachable_land_count} total lands.`
 
   await refreshCollectionSupplementaryData()
+      await loadCommanderTemplate()
 }
 
 function openItemCardDetails(
@@ -424,6 +425,7 @@ const { isLoading, loadErrorMessage, loadCollection, syncSavedCollectionSnapshot
     },
     async onLoaded() {
       await refreshCollectionSupplementaryData()
+      await loadCommanderTemplate()
       deckLegalityResult.value = null
       hoveredItem.value = null
       organizationMode.value = 'zone'
@@ -434,14 +436,14 @@ const { isLoading, loadErrorMessage, loadCollection, syncSavedCollectionSnapshot
 
 const {
   commanderScoresByOracleId, scoredCollection, profileSections, invalidateProfileSections,
-  loadProfileSections, loadCommanderScores, isValidatingDeck, deckLegalityResult, validateDeck,
+  loadProfileSections, loadCommanderScores, commanderTemplate, loadCommanderTemplate, isValidatingDeck, deckLegalityResult, validateDeck,
 } = useCollectionInsights({
   collection, isCommanderCollection, isMasterCollectionRoute, organizationMode,
   builderSourceCollectionId, builderThemeId, authHeaders, errorMessage, onUnauthorized,
 })
 
 const {
-  filterText, colorFilters, supertypeFilters, cardTypeFilters, subtypeFilters,
+  filterText, colorFilters, cardColors, cardColorMode, supertypeFilters, cardTypeFilters, subtypeFilters,
   viewMode, sortKey, sortDirection, commanderWorkspaceMode,
   facetOptions, hasSortableScores, filteredCollection,
 } = useCollectionPresentation({ collection, scoredCollection, organizationMode })
@@ -510,6 +512,8 @@ watch(
   [
     filterText,
     colorFilters,
+    cardColors,
+    cardColorMode,
     supertypeFilters,
     cardTypeFilters,
     subtypeFilters,
@@ -672,6 +676,8 @@ watch(
             v-model:sort-direction="sortDirection"
             v-model:filter-text="filterText"
             v-model:color-filters="colorFilters"
+            v-model:card-colors="cardColors"
+            v-model:card-color-mode="cardColorMode"
             v-model:supertype-filters="supertypeFilters"
             v-model:card-type-filters="cardTypeFilters"
             v-model:subtype-filters="subtypeFilters"
@@ -701,6 +707,7 @@ watch(
             :organization-mode="organizationMode"
             :profile-sections="profileSections"
             :commander-items="commanderItems"
+            :commander-template="commanderTemplate"
             :template-mode="isCommanderTemplateMode"
             :source-browser-open="isSourceBrowserOpen"
             :hovered-item="hoveredItem"

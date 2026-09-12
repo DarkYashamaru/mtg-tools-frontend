@@ -2,9 +2,11 @@ import { computed, ref, watch, type Ref, type ComputedRef } from 'vue'
 import type {
   CollectionRecord,
   CollectionItem,
+  CollectionLiveSynergy,
   CollectionProfileSection,
   WorkspaceOrganizationMode,
   DeckLegalityResult,
+  CommanderDeckTemplateData,
 } from '@/components/collection/types'
 
 interface Options {
@@ -42,6 +44,8 @@ export function useCollectionInsights({
       }
     >
   >({})
+  const liveSynergiesByOracleId = ref<Record<string, CollectionLiveSynergy[]>>({})
+  const commanderTemplate = ref<CommanderDeckTemplateData | null>(null)
 
   type ProfileSectionMode = 'category' | 'type'
 
@@ -76,21 +80,43 @@ export function useCollectionInsights({
     return {
       ...collection.value,
       items: collection.value.items.map((item) => {
-        const score = item.oracle_id
-          ? commanderScoresByOracleId.value[item.oracle_id]
+        const oracleId = item.oracle_id
+        const score = oracleId
+          ? commanderScoresByOracleId.value[oracleId]
+          : undefined
+        const liveSynergies = oracleId
+          ? liveSynergiesByOracleId.value[oracleId]
           : undefined
 
-        return score
+        return score || liveSynergies?.length
           ? {
               ...item,
-              commander_support_score: score.score,
-              commander_support_reasons: score.reasons,
-              score_breakdown: score.score_breakdown,
+              ...(score
+                ? {
+                    commander_support_score: score.score,
+                    commander_support_reasons: score.reasons,
+                    score_breakdown: score.score_breakdown,
+                  }
+                : {}),
+              ...(liveSynergies?.length
+                ? { live_synergies: liveSynergies }
+                : {}),
             }
           : item
       }),
     }
   })
+
+  async function loadCommanderTemplate() {
+    if (!collection.value || !isCommanderCollection.value || isMasterCollectionRoute.value || !collection.value.commander_oracle_id) { commanderTemplate.value = null; return }
+    try {
+      const response = await fetch(`/api/commander-template/${collection.value.id}/${collection.value.commander_oracle_id}`, { headers: { ...authHeaders.value } })
+      if (response.status === 401) { await onUnauthorized(); return }
+      const data = await response.json().catch(() => ({}))
+      commanderTemplate.value = response.ok && data.success && data.template ? data.template as CommanderDeckTemplateData : null
+    } catch { commanderTemplate.value = null }
+  }
+
   function invalidateProfileSections() {
     profileSectionsGeneration += 1
     profileSectionsByMode.value = {
@@ -105,6 +131,7 @@ export function useCollectionInsights({
       !collection.value.commander_oracle_id
     ) {
       commanderScoresByOracleId.value = {}
+      liveSynergiesByOracleId.value = {}
       return
     }
 
@@ -118,9 +145,18 @@ export function useCollectionInsights({
           ),
       ),
     )
+    const activeDeckOracleIds = Array.from(
+      new Set(
+        collection.value.items
+          .filter((item) => item.zone === 'commander' || item.zone === 'mainboard')
+          .map((item) => item.oracle_id)
+          .filter((id): id is string => Boolean(id)),
+      ),
+    )
 
     if (oracleIds.length === 0) {
       commanderScoresByOracleId.value = {}
+      liveSynergiesByOracleId.value = {}
       return
     }
 
@@ -140,6 +176,7 @@ export function useCollectionInsights({
 
           body: JSON.stringify({
             oracle_ids: oracleIds,
+            live_oracle_ids: activeDeckOracleIds,
             theme_id: builderThemeId.value,
           }),
         },
@@ -170,18 +207,35 @@ export function useCollectionInsights({
           await fetchScores('master'))
       }
 
-      commanderScoresByOracleId.value =
-        response.ok &&
-        data.success &&
-        data.scores
-          ? data.scores
-          : {}
+      if (response.ok && data.success && data.scores) {
+        commanderScoresByOracleId.value = data.scores
+        const namesByOracleId = new Map(
+          collection.value.items
+            .filter((item) => item.oracle_id)
+            .map((item) => [item.oracle_id as string, item.name || 'Unknown card']),
+        )
+        liveSynergiesByOracleId.value = Object.fromEntries(
+          Object.entries(data.live_synergies ?? {}).map(([oracleId, groups]) => [
+            oracleId,
+            (groups as Omit<CollectionLiveSynergy, 'partner_names'>[]).map((group) => ({
+              ...group,
+              partner_names: group.partner_oracle_ids
+                .map((partnerId) => namesByOracleId.get(partnerId))
+                .filter((name): name is string => Boolean(name)),
+            })),
+          ]),
+        )
+      } else {
+        commanderScoresByOracleId.value = {}
+        liveSynergiesByOracleId.value = {}
+      }
     } catch {
       /**
        * Scoring is supplementary.
        * Keep the collection usable without it.
        */
       commanderScoresByOracleId.value = {}
+      liveSynergiesByOracleId.value = {}
     }
   }
 
@@ -319,6 +373,8 @@ export function useCollectionInsights({
 
   return {
     commanderScoresByOracleId,
+    commanderTemplate,
+    loadCommanderTemplate,
     scoredCollection,
     profileSections,
     invalidateProfileSections,
