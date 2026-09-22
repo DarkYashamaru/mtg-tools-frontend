@@ -27,6 +27,7 @@ const props = defineProps<{
   sourceBrowserOpen: boolean
   hoveredItem: CollectionItem | null
   mutatingItemIds: Array<string | number>
+  generatedTokens?: CollectionItem[]
   readOnly: boolean
 }>()
 const emit = defineEmits<{
@@ -45,7 +46,7 @@ const component = computed(() => {
 const componentProps = computed(() => props.templateMode
   ? { commanderItems: props.commanderItems, commanderTemplate: props.commanderTemplate }
   : { organizationMode: props.organizationMode, profileSections: props.profileSections,
-      ...(isCommander.value ? { showScore: true } : {}) })
+      ...(isCommander.value ? { showScore: true, generatedTokens: props.generatedTokens ?? [] } : {}) })
 const events = {
   contextMenu: (payload: CollectionCardContextMenuPayload) => emit('context-menu', payload),
   incrementItem: (item: CollectionItem) => emit('increment-item', item),
@@ -62,6 +63,7 @@ const events = {
         :organization-mode="organizationMode"
         :profile-sections="profileSections"
         :mutating-item-ids="mutatingItemIds"
+        :generated-tokens="generatedTokens"
         :show-quantity-actions="!readOnly"
         :show-score="true"
         v-on="events"
@@ -72,7 +74,7 @@ const events = {
     </aside>
   </div>
 
-  <div v-else-if="collection.items.length === 0 && !templateMode" class="state-panel state-panel-compact">
+  <div v-else-if="collection.items.length === 0 && !(isCommander && (generatedTokens?.length ?? 0)) && !templateMode" class="state-panel state-panel-compact">
     <h2>No cards match this filter</h2>
     <p>Try a different local filter or clear the current search.</p>
   </div>

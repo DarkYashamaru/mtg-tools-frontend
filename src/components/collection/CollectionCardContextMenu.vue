@@ -15,6 +15,7 @@ const emit = defineEmits<{
   'change-print': [item: CollectionItem]
   commander: [item: CollectionItem, action: 'set' | 'remove']
   'move-zone': [item: CollectionItem, zone: 'mainboard' | 'maybeboard']
+  ownership: [item: CollectionItem, action: 'add' | 'remove']
 }>()
 const positionedState = ref<CollectionCardContextMenuPayload | null>(null)
 const contextMenuElement = ref<HTMLElement | null>(null)
@@ -89,6 +90,33 @@ onBeforeUnmount(() => {
         <span>
           Show card details
         </span>
+      </button>
+
+      <button
+        v-if="
+          isCommanderCollection &&
+          !isReadOnlyCollection
+        "
+        class="context-menu-action"
+        type="button"
+        :disabled="mutatingItemIds.includes(positionedState.item.id)"
+        @click="emit('ownership', positionedState.item, 'add')"
+      >
+        <span>{{ positionedState.item.is_owned ? 'Add owned copy' : 'Mark as owned' }}</span>
+      </button>
+
+      <button
+        v-if="
+          isCommanderCollection &&
+          !isReadOnlyCollection &&
+          (positionedState.item.manual_owned_amount ?? 0) > 0
+        "
+        class="context-menu-action"
+        type="button"
+        :disabled="mutatingItemIds.includes(positionedState.item.id)"
+        @click="emit('ownership', positionedState.item, 'remove')"
+      >
+        <span>Remove owned copy</span>
       </button>
 
       <button

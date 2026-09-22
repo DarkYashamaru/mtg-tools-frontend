@@ -19,6 +19,8 @@ interface Props {
   supertypeFilters?: string[]
   cardTypeFilters?: string[]
   subtypeFilters?: string[]
+  ownershipFilter?: 'all' | 'owned' | 'unowned'
+  showOwnershipFilter?: boolean
 
   supertypeOptions?: string[]
   cardTypeOptions?: string[]
@@ -33,6 +35,8 @@ const props = withDefaults(
     supertypeOptions: () => [],
     cardTypeOptions: () => [],
     subtypeOptions: () => [],
+    ownershipFilter: 'all',
+    showOwnershipFilter: false,
   },
 )
 
@@ -44,6 +48,7 @@ const emit = defineEmits<{
   'update:supertypeFilters': [value: string[]]
   'update:cardTypeFilters': [value: string[]]
   'update:subtypeFilters': [value: string[]]
+  'update:ownershipFilter': [value: 'all' | 'owned' | 'unowned']
 }>()
 
 type FacetName =
@@ -51,6 +56,7 @@ type FacetName =
   | 'supertypes'
   | 'types'
   | 'subtypes'
+  | 'ownership'
 
 const openFacet = ref<FacetName | null>(null)
 
@@ -68,6 +74,7 @@ const activeFacetCount = computed(() => (
   + (props.supertypeFilters?.length ?? 0)
   + (props.cardTypeFilters?.length ?? 0)
   + (props.subtypeFilters?.length ?? 0)
+  + (props.ownershipFilter && props.ownershipFilter !== 'all' ? 1 : 0)
 ))
 
 const hasFacetFilters = computed(() =>
@@ -147,6 +154,7 @@ function clearFacetFilters() {
   emit('update:supertypeFilters', [])
   emit('update:cardTypeFilters', [])
   emit('update:subtypeFilters', [])
+  emit('update:ownershipFilter', 'all')
 }
 
 onMounted(() => {
@@ -216,6 +224,34 @@ onBeforeUnmount(() => {
           @update:model-value="emit('update:cardColors', $event)"
           @update:mode="emit('update:cardColorMode', $event)"
         />
+        <div v-if="showOwnershipFilter" class="facet-dropdown">
+          <button
+            type="button"
+            class="facet-trigger"
+            :class="{ active: ownershipFilter !== 'all' }"
+            :aria-expanded="openFacet === 'ownership'"
+            @click.stop="toggleFacetDropdown('ownership')"
+          >
+            <span>Ownership</span>
+            <span v-if="ownershipFilter !== 'all'" class="facet-count">1</span>
+          </button>
+
+          <div v-if="openFacet === 'ownership'" class="facet-menu" @click.stop>
+            <label v-for="option in [
+              { value: 'all', label: 'All cards' },
+              { value: 'owned', label: 'Owned' },
+              { value: 'unowned', label: 'Unowned' },
+            ]" :key="option.value" class="facet-option">
+              <input
+                :checked="ownershipFilter === option.value"
+                type="radio"
+                name="collection-ownership"
+                @change="emit('update:ownershipFilter', option.value as 'all' | 'owned' | 'unowned')"
+              >
+              <span>{{ option.label }}</span>
+            </label>
+          </div>
+        </div>
         <div class="facet-dropdown">
           <button
             type="button"

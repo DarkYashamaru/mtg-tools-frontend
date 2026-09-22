@@ -430,6 +430,12 @@ const { isLoading, loadErrorMessage, loadCollection, syncSavedCollectionSnapshot
       hoveredItem.value = null
       organizationMode.value = 'zone'
       commanderWorkspaceMode.value = 'normal'
+      sortKey.value = isCommanderCollection.value
+        ? 'score'
+        : 'name'
+      sortDirection.value = isCommanderCollection.value
+        ? 'desc'
+        : 'asc'
       viewMode.value = collection.value?.deck_type.toLowerCase() === 'binder' ? 'list' : 'grid'
     },
   })
@@ -445,7 +451,7 @@ const {
 const {
   filterText, colorFilters, cardColors, cardColorMode, supertypeFilters, cardTypeFilters, subtypeFilters,
   viewMode, sortKey, sortDirection, commanderWorkspaceMode,
-  facetOptions, hasSortableScores, filteredCollection,
+  facetOptions, hasSortableScores, filteredCollection, ownershipFilter,
 } = useCollectionPresentation({ collection, scoredCollection, organizationMode })
 
 const {
@@ -458,7 +464,7 @@ const { addCardQuery, addCardSuggestions, isSearchingCards, dismissAddCardSugges
 
 const {
   mutatingItemIds, isMutatingCommander, isReplacingPrint, mutateItemQuantity,
-  moveItemToZone, addCardToMainboard, replacePrint, mutateCommander,
+  moveItemToZone, addCardToMainboard, replacePrint, mutateCommander, setItemOwnership,
 } = useCollectionMutations({
   collection, isReadOnlyCollection, isCommanderCollection, authHeaders, errorMessage,
   hoveredItem, printPickerItem, deckLegalityResult, isSourceBrowserOpen,
@@ -681,6 +687,7 @@ watch(
             v-model:supertype-filters="supertypeFilters"
             v-model:card-type-filters="cardTypeFilters"
             v-model:subtype-filters="subtypeFilters"
+            v-model:ownership-filter="ownershipFilter"
             v-model:add-card-query="addCardQuery"
             :collection="collection"
             :show-score-sort="hasSortableScores"
@@ -712,6 +719,7 @@ watch(
             :source-browser-open="isSourceBrowserOpen"
             :hovered-item="hoveredItem"
             :mutating-item-ids="mutatingItemIds"
+            :generated-tokens="collection.generated_tokens ?? []"
             :read-only="isReadOnlyCollection"
             @hover-item="handleHoverItem"
             @context-menu="handleContextMenu"
@@ -748,6 +756,7 @@ watch(
           @open-card="openCardDetails"
           @change-print="openPrintPicker"
           @commander="mutateCommander"
+          @ownership="setItemOwnership"
           @move-zone="moveItemToZone"
         />
 

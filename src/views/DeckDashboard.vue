@@ -16,6 +16,7 @@ type CollectionSummary = {
   item_count: number
   is_virtual?: boolean
   is_read_only?: boolean
+  is_manual_inventory?: boolean
   source_collection_count?: number
 }
 
@@ -112,6 +113,10 @@ function collectionSubtitle(collection: CollectionSummary) {
     const sourceCount = collection.source_collection_count ?? 0
     const label = sourceCount === 1 ? '1 collection' : `${sourceCount} collections`
     return `Read-only aggregate across ${label}.`
+  }
+
+  if (collection.is_manual_inventory) {
+    return 'Protected inventory for cards acquired while building decks.'
   }
 
   const deckType = collection.deck_type.toLowerCase()

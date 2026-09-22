@@ -16,6 +16,8 @@ import {
 import { sortCollectionItems } from '@/components/collection/sorting'
 import type { CardColorMatchMode } from '@/components/collection/CardColorFilter.vue'
 
+export type CollectionOwnershipFilter = 'all' | 'owned' | 'unowned'
+
 interface Options {
   organizationMode: Ref<WorkspaceOrganizationMode>
   collection: Ref<CollectionRecord | null>
@@ -30,6 +32,7 @@ export function useCollectionPresentation({ collection, scoredCollection, organi
   const supertypeFilters = ref<string[]>([])
   const cardTypeFilters = ref<string[]>([])
   const subtypeFilters = ref<string[]>([])
+  const ownershipFilter = ref<CollectionOwnershipFilter>('all')
 
   const viewMode = ref<WorkspaceViewMode>('list')
   const sortKey = ref<CollectionSortKey>('name')
@@ -63,9 +66,10 @@ export function useCollectionPresentation({ collection, scoredCollection, organi
       return null
     }
 
+    const scored = scoredCollection.value
     const query = filterText.value.trim().toLowerCase()
 
-    const matchingItems = scoredCollection.value.items.filter(
+    const matchingItems = scored.items.filter(
       (item) => {
         const haystack = [
           item.name ?? '',
@@ -85,6 +89,16 @@ export function useCollectionPresentation({ collection, scoredCollection, organi
 
         return (
           haystack.includes(query) &&
+          (
+            scored.deck_type.toLowerCase() !== 'commander'
+            ||
+            ownershipFilter.value === 'all'
+            || (
+              ownershipFilter.value === 'owned'
+              ? item.is_owned === true
+              : item.is_owned !== true
+            )
+          ) &&
           matchesCollectionFacets(
             item,
             collectionFacetFilters.value,
@@ -94,7 +108,7 @@ export function useCollectionPresentation({ collection, scoredCollection, organi
     )
 
     return {
-      ...scoredCollection.value,
+      ...scored,
       items: sortCollectionItems(
         matchingItems,
         sortKey.value,
@@ -123,6 +137,7 @@ export function useCollectionPresentation({ collection, scoredCollection, organi
     supertypeFilters,
     cardTypeFilters,
     subtypeFilters,
+    ownershipFilter,
     viewMode,
     organizationMode,
     sortKey,

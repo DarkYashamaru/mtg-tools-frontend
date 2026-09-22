@@ -27,8 +27,11 @@ interface Props {
   primaryActionLabel?: string
   primaryActionDisabled?: boolean
   showScore?: boolean
+  showOwnershipStatus?: boolean
   collapsible?: boolean
   initiallyCollapsed?: boolean
+  forceGrid?: boolean
+  nativeContextMenu?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -44,8 +47,11 @@ const props = withDefaults(defineProps<Props>(), {
   primaryActionLabel: '',
   primaryActionDisabled: false,
   showScore: false,
+  showOwnershipStatus: false,
   collapsible: false,
   initiallyCollapsed: false,
+  forceGrid: false,
+  nativeContextMenu: false,
 })
 const emit = defineEmits<{
   hoverItem: [item: CollectionItem | null]
@@ -57,6 +63,7 @@ const emit = defineEmits<{
 }>()
 const totalCards = computed(() => props.items.reduce((sum, item) => sum + item.amount, 0))
 const isCollapsed = ref(props.initiallyCollapsed)
+const usesListLayout = computed(() => props.viewMode === 'list' && !props.forceGrid)
 const usesProfileSections = computed(() => (
   props.organizationMode === 'category' || props.organizationMode === 'type'
 ))
@@ -72,7 +79,7 @@ const profileSectionGroups = computed(() => (
 </script>
 
 <template>
-  <div v-if="viewMode === 'list' && usesProfileSections && profileSectionGroups.length" class="section-stack">
+  <div v-if="usesListLayout && usesProfileSections && profileSectionGroups.length" class="section-stack">
     <CollectionListSection
       v-for="group in profileSectionGroups"
       :key="group.key"
@@ -86,6 +93,7 @@ const profileSectionGroups = computed(() => (
       :primary-action-label="primaryActionLabel"
       :primary-action-disabled="primaryActionDisabled"
       :show-score="showScore"
+      :show-ownership-status="showOwnershipStatus"
       @hover-item="emit('hoverItem', $event)"
       @context-menu="emit('contextMenu', $event)"
       @increment-item="emit('incrementItem', $event)"
@@ -96,7 +104,7 @@ const profileSectionGroups = computed(() => (
   </div>
 
   <CollectionListSection
-    v-else-if="viewMode === 'list'"
+    v-else-if="usesListLayout"
     :title="title"
     :items="items"
     :hide-singleton-amount="hideSingletonAmount"
@@ -109,6 +117,7 @@ const profileSectionGroups = computed(() => (
     :primary-action-label="primaryActionLabel"
     :primary-action-disabled="primaryActionDisabled"
     :show-score="showScore"
+    :show-ownership-status="showOwnershipStatus"
     @hover-item="emit('hoverItem', $event)"
     @context-menu="emit('contextMenu', $event)"
     @increment-item="emit('incrementItem', $event)"
@@ -167,6 +176,8 @@ const profileSectionGroups = computed(() => (
               :show-quantity-actions="showQuantityActions"
               :primary-action-label="primaryActionLabel"
               :primary-action-disabled="primaryActionDisabled"
+              :show-ownership-status="showOwnershipStatus"
+              :native-context-menu="nativeContextMenu"
               @context-menu="emit('contextMenu', $event)"
               @increment-item="emit('incrementItem', $event)"
               @decrement-item="emit('decrementItem', $event)"
@@ -189,6 +200,8 @@ const profileSectionGroups = computed(() => (
         :show-quantity-actions="showQuantityActions"
         :primary-action-label="primaryActionLabel"
         :primary-action-disabled="primaryActionDisabled"
+        :show-ownership-status="showOwnershipStatus"
+        :native-context-menu="nativeContextMenu"
         @context-menu="emit('contextMenu', $event)"
         @increment-item="emit('incrementItem', $event)"
         @decrement-item="emit('decrementItem', $event)"

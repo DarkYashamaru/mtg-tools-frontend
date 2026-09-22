@@ -17,6 +17,7 @@ interface Props {
   primaryActionLabel?: string
   primaryActionDisabled?: boolean
   showScore?: boolean
+  showOwnershipStatus?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -31,6 +32,7 @@ const props = withDefaults(defineProps<Props>(), {
   primaryActionLabel: '',
   primaryActionDisabled: false,
   showScore: false,
+  showOwnershipStatus: false,
 })
 const emit = defineEmits<{
   hoverItem: [item: CollectionItem | null]
@@ -124,6 +126,22 @@ function isMutating(item: CollectionItem) {
             <span class="printing-meta">
               <span>{{ item.set_code || '—' }} · {{ item.collector_number || '—' }}</span>
               <strong v-if="showQuantity(item)" class="qty" :class="{ violation: hasSingletonViolation(item) }">{{ item.amount }}x</strong>
+              <span v-if="showOwnershipStatus" class="ownership-label" :class="item.is_owned ? 'owned' : 'unowned'">
+                {{ item.is_owned ? 'Owned' : 'Unowned' }}
+              </span>
+              <span
+                v-if="showOwnershipStatus && item.is_over_reserved && item.conflicting_reservations?.length"
+                class="ownership-conflict"
+              >
+                Already used in:
+                <RouterLink
+                  v-for="(reservation, index) in item.conflicting_reservations"
+                  :key="reservation.collection_id"
+                  class="ownership-conflict-link"
+                  :to="{ name: 'collection-workspace', params: { collectionId: reservation.collection_id } }"
+                  @click.stop
+                >{{ index > 0 ? ', ' : '' }}{{ reservation.collection_name }}</RouterLink>
+              </span>
             </span>
             <span>{{ item.lang || '—' }}</span>
             <CardPriceBadges
@@ -260,6 +278,11 @@ function isMutating(item: CollectionItem) {
 }
 
 .printing-meta { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+.ownership-label { padding: 2px 6px; border-radius: 999px; font-size: 0.7rem; font-weight: 800; }
+.ownership-label.owned { background: rgba(34, 197, 94, 0.16); color: #86efac; }
+.ownership-label.unowned { background: rgba(251, 113, 133, 0.14); color: var(--error-text, #fb7185); }
+.ownership-conflict { color: var(--error-text, #fb7185); font-size: 0.7rem; font-weight: 800; }
+.ownership-conflict-link { color: inherit; text-decoration: underline; }
 .qty.violation { color: var(--error-text, #fb7185); }
 
 .name-text {

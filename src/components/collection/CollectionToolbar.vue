@@ -28,6 +28,7 @@ interface Props {
   supertypeFilters?: string[]
   cardTypeFilters?: string[]
   subtypeFilters?: string[]
+  ownershipFilter?: 'all' | 'owned' | 'unowned'
   supertypeOptions?: string[]
   cardTypeOptions?: string[]
   subtypeOptions?: string[]
@@ -51,6 +52,7 @@ const props = withDefaults(defineProps<Props>(), {
   storePriceRefreshDisabled: false,
   storePriceRefreshLabel: 'Refresh store prices',
   commanderWorkspaceMode: 'normal',
+  ownershipFilter: 'all',
 })
 
 const emit = defineEmits<{
@@ -66,6 +68,7 @@ const emit = defineEmits<{
   'update:supertypeFilters': [value: string[]]
   'update:cardTypeFilters': [value: string[]]
   'update:subtypeFilters': [value: string[]]
+  'update:ownershipFilter': [value: 'all' | 'owned' | 'unowned']
   'update:addCardQuery': [value: string]
   selectAddCardSuggestion: [value: CollectionCardSearchResult]
   dismissAddCardSuggestions: []
@@ -110,6 +113,8 @@ const isReadOnly = computed(() =>
         :supertype-filters="supertypeFilters"
         :card-type-filters="cardTypeFilters"
         :subtype-filters="subtypeFilters"
+        :ownership-filter="ownershipFilter"
+        :show-ownership-filter="deckType === 'commander'"
         :supertype-options="supertypeOptions"
         :card-type-options="cardTypeOptions"
         :subtype-options="subtypeOptions"
@@ -130,6 +135,7 @@ const isReadOnly = computed(() =>
         @update:subtype-filters="
           emit('update:subtypeFilters', $event)
         "
+        @update:ownership-filter="emit('update:ownershipFilter', $event)"
       />
     </div>
 

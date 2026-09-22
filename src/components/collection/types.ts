@@ -39,7 +39,19 @@ export type CollectionItem = {
   lang: string | null
   image_uri: string | null
   printing_faces?: Array<{ name: string; image_uri: string }>
+  /** Commander/Mainboard card names that produce a generated token. */
+  generated_by?: string[]
   amount: number
+  /** Ownership supplied by an included Binder, including Manual Inventory. */
+  is_owned?: boolean
+  manual_owned_amount?: number
+  is_over_reserved?: boolean
+  conflicting_reservations?: Array<{
+    collection_id: number
+    collection_name: string
+    item_id: number
+    zone: string
+  }>
   zone: string
   available_print_count?: number
   source_collection_count?: number
@@ -112,7 +124,9 @@ export type CollectionRecord = {
   item_count: number
   is_virtual?: boolean
   is_read_only?: boolean
+  is_manual_inventory?: boolean
   source_collection_count?: number
+  generated_tokens?: CollectionItem[]
   items: CollectionItem[]
 }
 
@@ -131,6 +145,9 @@ export type BasicLandAdjustment = {
   existing_nonbasic_sources: ManaColorCounts
   current_basics: ManaColorCounts
   proposed_basics: ManaColorCounts
+  applied_basics?: ManaColorCounts
+  applied_basic_land_count?: number
+  is_manual_allocation?: boolean
   removed_off_identity: Partial<ManaColorCounts>
   warning: string | null
 }

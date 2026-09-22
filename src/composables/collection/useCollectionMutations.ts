@@ -295,6 +295,37 @@ export function useCollectionMutations({
 
     deckLegalityResult.value = null
   }
+  async function setItemOwnership(item: CollectionItem, action: 'add' | 'remove') {
+    if (!collection.value || isReadOnlyCollection.value || !isCommanderCollection.value) return
+
+    beginItemMutation(item.id)
+    errorMessage.value = ''
+    closeContextMenu()
+    try {
+      const response = await fetch(
+        `/api/collections/${collection.value.id}/items/${item.id}/owned-copy`,
+        {
+          method: action === 'add' ? 'POST' : 'DELETE',
+          headers: { ...authHeaders.value },
+        },
+      )
+      const data = await response.json().catch(() => ({}))
+      if (response.status === 401) {
+        await onUnauthorized()
+        return
+      }
+      if (!response.ok || !data.success || !data.collection) {
+        throw new Error(data.error || 'Unable to update owned copies.')
+      }
+      const updated = mergeCollectionMetadata(data.collection as CollectionRecord)
+      collection.value = await enrichCollectionWithGameplay(updated, collection.value)
+      await refreshCollectionSupplementaryData()
+    } catch (error) {
+      errorMessage.value = error instanceof Error ? error.message : 'Unable to update owned copies.'
+    } finally {
+      endItemMutation(item.id)
+    }
+  }
   async function replacePrint(
     cardId: string,
   ) {
@@ -475,6 +506,7 @@ export function useCollectionMutations({
     mutateItemQuantity,
     moveItemToZone,
     addCardToMainboard,
+    setItemOwnership,
     replacePrint,
     mutateCommander,
   }

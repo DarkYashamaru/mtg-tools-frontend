@@ -23,6 +23,7 @@ const emit = defineEmits<{
 
 const targetLandCount = ref(38)
 const preview = ref<BasicLandAdjustment | null>(null)
+const manualBasics = ref<ManaColorCounts>(emptyColorCounts())
 const previewError = ref('')
 const isLoadingPreview = ref(false)
 const isApplying = ref(false)
@@ -41,6 +42,39 @@ const visibleColors = computed(() => COLOR_ORDER.filter((color) => {
     || (adjustment?.current_basics[color] ?? 0) > 0
     || (adjustment?.proposed_basics[color] ?? 0) > 0
 }))
+
+const requiredBasicLandCount = computed(() => preview.value?.proposed_basic_land_count ?? 0)
+const manualBasicLandCount = computed(() => COLOR_ORDER.reduce(
+  (total, color) => total + (Number.isFinite(manualBasics.value[color]) ? manualBasics.value[color] : 0),
+  0,
+))
+const isManualAllocationValid = computed(() => {
+  const adjustment = preview.value
+  if (!adjustment) return false
+  return adjustment.eligible_colors.every((color) => (
+    Number.isInteger(manualBasics.value[color]) && manualBasics.value[color] >= 0
+  )) && manualBasicLandCount.value === requiredBasicLandCount.value
+})
+const allocationStatus = computed(() => {
+  const difference = requiredBasicLandCount.value - manualBasicLandCount.value
+  if (difference === 0) return `Allocation totals ${requiredBasicLandCount.value} basics.`
+  if (difference > 0) return `${difference} basic${difference === 1 ? '' : 's'} left to allocate.`
+  const overage = Math.abs(difference)
+  return `${overage} basic${overage === 1 ? '' : 's'} over the required total.`
+})
+
+function emptyColorCounts(): ManaColorCounts {
+  return { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 }
+}
+
+function resetManualBasics() {
+  if (!preview.value || isApplying.value) return
+  manualBasics.value = { ...preview.value.proposed_basics }
+}
+
+function isEligibleColor(color: ManaColor) {
+  return preview.value?.eligible_colors.includes(color) ?? false
+}
 
 function clearPreviewTimer() {
   if (previewTimer !== null) {
@@ -88,6 +122,7 @@ async function requestPreview() {
       throw new Error(data.error || 'Unable to preview the basic-land adjustment.')
     }
     preview.value = data.adjustment as BasicLandAdjustment
+    manualBasics.value = { ...preview.value.proposed_basics }
   } catch (error) {
     if (requestId === previewRequestId) {
       preview.value = null
@@ -110,7 +145,12 @@ function schedulePreview() {
 }
 
 async function applyAdjustment() {
-  if (!preview.value || !isTargetValid.value || isApplying.value) return
+  const adjustmentPreview = preview.value
+  if (!adjustmentPreview || !isTargetValid.value || !isManualAllocationValid.value || isApplying.value) return
+
+  const basicLandCounts = Object.fromEntries(
+    adjustmentPreview.eligible_colors.map((color) => [color, manualBasics.value[color]]),
+  )
 
   isApplying.value = true
   previewError.value = ''
@@ -123,7 +163,10 @@ async function applyAdjustment() {
           'Content-Type': 'application/json',
           ...props.authHeaders,
         },
-        body: JSON.stringify({ target_land_count: targetLandCount.value }),
+        body: JSON.stringify({
+          target_land_count: targetLandCount.value,
+          basic_land_counts: basicLandCounts,
+        }),
       },
     )
     const data = await response.json().catch(() => ({}))
@@ -163,6 +206,7 @@ watch(
     if (!open) {
       previewRequestId += 1
       preview.value = null
+      manualBasics.value = emptyColorCounts()
       previewError.value = ''
       isLoadingPreview.value = false
       return
@@ -241,8 +285,8 @@ onBeforeUnmount(() => {
             <strong>{{ preview.preserved_land_count }}</strong>
           </div>
           <div>
-            <span>Proposed basics</span>
-            <strong>{{ preview.proposed_basic_land_count }}</strong>
+            <span>Final basics</span>
+            <strong>{{ manualBasicLandCount }}</strong>
           </div>
           <div>
             <span>Resulting lands</span>
@@ -258,10 +302,20 @@ onBeforeUnmount(() => {
           <header>
             <div>
               <h3>Basic-land allocation</h3>
-              <p>Existing nonbasic sources are included when balancing each color.</p>
+              <p>Edit the final legal allocation. Existing nonbasic sources inform the recommendation.</p>
             </div>
-            <span v-if="isLoadingPreview" class="refreshing">Refreshing…</span>
+            <div class="allocation-actions">
+              <span v-if="isLoadingPreview" class="refreshing">Refreshing…</span>
+              <button type="button" :disabled="isApplying" @click="resetManualBasics">Reset recommendation</button>
+            </div>
           </header>
+
+          <p
+            class="allocation-status"
+            :class="{ invalid: !isManualAllocationValid }"
+          >
+            {{ allocationStatus }}
+          </p>
 
           <div class="allocation-table">
             <div class="allocation-heading">
@@ -269,7 +323,7 @@ onBeforeUnmount(() => {
               <span>Pips</span>
               <span>Other sources</span>
               <span>Current</span>
-              <span>Proposed</span>
+              <span>Final</span>
             </div>
             <div
               v-for="color in visibleColors"
@@ -280,7 +334,17 @@ onBeforeUnmount(() => {
               <span>{{ colorValue(preview.mana_demand, color) }}</span>
               <span>{{ colorValue(preview.existing_nonbasic_sources, color) }}</span>
               <span>{{ colorValue(preview.current_basics, color) }}</span>
-              <strong>{{ colorValue(preview.proposed_basics, color) }}</strong>
+              <input
+                v-if="isEligibleColor(color)"
+                v-model.number="manualBasics[color]"
+                class="allocation-input"
+                type="number"
+                min="0"
+                step="1"
+                :disabled="isApplying"
+                :aria-label="`${color} basic lands`"
+              >
+              <strong v-else>Removed</strong>
             </div>
           </div>
         </section>
@@ -291,7 +355,7 @@ onBeforeUnmount(() => {
         <button
           type="button"
           class="apply-button"
-          :disabled="!preview || !isTargetValid || isLoadingPreview || isApplying"
+          :disabled="!preview || !isTargetValid || !isManualAllocationValid || isLoadingPreview || isApplying"
           @click="applyAdjustment"
         >
           {{ isApplying ? 'Adjusting…' : preview?.target_reached === false ? 'Apply closest result' : 'Apply adjustment' }}
@@ -432,6 +496,26 @@ onBeforeUnmount(() => {
   font-size: 0.82rem;
 }
 
+.allocation-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.allocation-status {
+  margin: 0;
+  padding: 9px 11px;
+  border-radius: 10px;
+  color: var(--text-secondary);
+  background: rgba(59, 130, 246, 0.1);
+  font-size: 0.84rem;
+}
+
+.allocation-status.invalid {
+  color: var(--error-text, #fecaca);
+  background: rgba(220, 38, 38, 0.16);
+}
+
 .allocation-table {
   overflow-x: auto;
   border: 1px solid var(--surface-border-light);
@@ -456,6 +540,11 @@ onBeforeUnmount(() => {
 
 .allocation-row + .allocation-row {
   border-top: 1px solid var(--surface-border-light);
+}
+
+.allocation-input {
+  width: 100%;
+  min-width: 0;
 }
 
 .mana-symbol {
